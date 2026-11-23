@@ -1,0 +1,35 @@
+MODELLO DEL DAVID — FILE MANCANTE
+=================================
+
+La pagina cerca il file:   assets/david-head.glb
+
+Finché il file non c'è, nella sfera compare un volume astratto con la
+scritta "Segnaposto provvisorio": NON è il risultato finale.
+
+Scansione consigliata (verificata)
+----------------------------------
+"Head of Michelangelo's David" — SMK, Statens Museum for Kunst
+(National Gallery of Denmark), Royal Cast Collection, calco in gesso
+del 1899, numero di inventario KAS2232. Scansione Artec Eva realizzata
+da Scan The World con SMK e rilasciata da SMK in pubblico dominio (CC0).
+
+  • Originale (STL ad alta risoluzione):
+    https://www.myminifactory.com/object/3d-print-head-of-michelangelo-s-david-52645
+  • Scheda del museo: http://collection.smk.dk/#/en/detail/KAS2232
+  • Versione già ottimizzata per il web (100k triangoli, GLB scaricabile,
+    licenza CC BY: va citato l'autore dell'ottimizzazione):
+    https://skfb.ly/o8AFK
+
+Come prepararlo
+---------------
+1. Scarica lo STL (oppure il GLB da Sketchfab).
+2. Nel terminale, dalla cartella tools/:
+     npm install
+     node prepare-david.mjs PERCORSO/DEL/FILE.stl
+   Il programma raddrizza il modello, lo alleggerisce conservando il
+   volto (160.000 triangoli) e scrive assets/david-head.glb.
+   (Il GLB di Sketchfab puoi anche copiarlo direttamente qui
+   rinominandolo david-head.glb.)
+3. Apri la pagina aggiungendo ?tune all'indirizzo e regola rotazione e
+   posizione finché il volto guarda bene verso l'osservatore.
+4. Copia il blocco "david: {...}" mostrato nel riquadro dentro js/config.js.

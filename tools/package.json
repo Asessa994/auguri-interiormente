@@ -1,0 +1,16 @@
+{
+  "name": "interiormente-sfera-tools",
+  "private": true,
+  "type": "module",
+  "description": "Strumenti per preparare il modello 3D del David",
+  "scripts": {
+    "prepare-david": "node prepare-david.mjs"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "meshoptimizer": "^1.3.0",
+    "three": "^0.187.0"
+  }
+}
