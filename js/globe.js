@@ -119,7 +119,7 @@ function glassEdgeMaterial() {
   });
 }
 
-export async function buildGlobe(materials, palette, plaqueCfg, { basePlaqueLines = null, maxAnisotropy = 8 } = {}) {
+export async function buildGlobe(materials, palette, plaqueCfg, { basePlaqueLines = null, maxAnisotropy = 8, pedestal: withPedestal = true, innerPlaque = true, centralPlaque = null } = {}) {
   const group = new THREE.Group();
   group.name = 'globe';
 
@@ -171,10 +171,21 @@ export async function buildGlobe(materials, palette, plaqueCfg, { basePlaqueLine
   pedestal.name = 'pedestal';
   pedestal.castShadow = true;
   pedestal.receiveShadow = true;
-  interior.add(pedestal);
+  if (withPedestal) interior.add(pedestal);
 
-  const plaque = await buildPlaque(materials, plaqueCfg);
-  interior.add(plaque.group);
+  const plaque = innerPlaque ? await buildPlaque(materials, plaqueCfg) : null;
+  if (plaque) interior.add(plaque.group);
+
+  // Lapide centrale in marmo con l'iscrizione (versione con le colonne).
+  let marblePlaque = null;
+  if (centralPlaque) {
+    try {
+      marblePlaque = await buildMarblePlaque(materials, centralPlaque, maxAnisotropy);
+      interior.add(marblePlaque.group);
+    } catch (e) {
+      console.error('[lapide] non creata:', e);
+    }
+  }
 
   // Vetro.
   const glassGeo = new THREE.SphereGeometry(DIM.R, 128, 96);
@@ -189,7 +200,135 @@ export async function buildGlobe(materials, palette, plaqueCfg, { basePlaqueLine
   edge.renderOrder = 2;
   group.add(edge);
 
-  return { group, interior, base, pedestal, plaque, glass, edge, bed, basePlaque };
+  return { group, interior, base, pedestal: withPedestal ? pedestal : null, plaque, glass, edge, bed, basePlaque, marblePlaque };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Lapide in marmo tra le colonne: iscrizione incisa (lettere scure
+//  in incavo, con normal map calcolata dal testo) su un piccolo zoccolo.
+// ─────────────────────────────────────────────────────────────
+function boxBlur(src, w, h, r) {
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  const n = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    let acc = 0;
+    for (let x = -r; x <= r; x++) acc += src[y * w + Math.min(w - 1, Math.max(0, x))];
+    for (let x = 0; x < w; x++) {
+      tmp[y * w + x] = acc / n;
+      acc += src[y * w + Math.min(w - 1, x + r + 1)] - src[y * w + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let acc = 0;
+    for (let y = -r; y <= r; y++) acc += tmp[Math.min(h - 1, Math.max(0, y)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = acc / n;
+      acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+
+async function buildMarblePlaque(materials, cfg, maxAnisotropy) {
+  const group = new THREE.Group();
+  group.name = 'marble-plaque';
+  const W = cfg.width ?? 0.56, H = cfg.height ?? 0.34, D = 0.05;
+  const PH = 0.045;                               // zoccolo
+  const z0 = cfg.z ?? 0.03;
+  const lines = cfg.lines?.length ? cfg.lines : ['Interiormente', 'Design'];
+
+  // ── texture dell'iscrizione ──
+  await loadFont('400 120px Forum');
+  const cw = 1024, ch = Math.round(cw * (H / W));
+  const mk = () => { const c = document.createElement('canvas'); c.width = cw; c.height = ch; return c; };
+  const maskC = mk(), mctx = maskC.getContext('2d');
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, cw, ch);
+  mctx.fillStyle = mctx.strokeStyle = '#fff';
+  // cornice incisa (doppio filetto)
+  mctx.lineWidth = 5; mctx.strokeRect(cw * 0.045, ch * 0.07, cw * 0.91, ch * 0.86);
+  mctx.lineWidth = 2; mctx.strokeRect(cw * 0.065, ch * 0.105, cw * 0.87, ch * 0.79);
+  const font = (s) => `400 ${s}px Forum, 'Cormorant Garamond', serif`;
+  let size = Math.round(ch * (lines.length > 1 ? 0.27 : 0.34));
+  mctx.font = font(size);
+  const widest = Math.max(...lines.map((l) => mctx.measureText(l).width));
+  if (widest > cw * 0.76) size = Math.floor((size * cw * 0.76) / widest);
+  mctx.font = font(size);
+  mctx.textAlign = 'center';
+  mctx.textBaseline = 'alphabetic';
+  if ('letterSpacing' in mctx) mctx.letterSpacing = Math.round(size * 0.04) + 'px';
+  mctx.lineJoin = 'round';
+  mctx.lineWidth = Math.max(2, size * 0.03);
+  const lh = size * 1.18;
+  const firstBase = ch / 2 - (lh * (lines.length - 1)) / 2 + size * 0.34;
+  lines.forEach((l, i) => { mctx.strokeText(l, cw / 2, firstBase + i * lh); mctx.fillText(l, cw / 2, firstBase + i * lh); });
+
+  const img = mctx.getImageData(0, 0, cw, ch).data;
+  const mask = new Float32Array(cw * ch);
+  for (let i = 0; i < cw * ch; i++) mask[i] = img[i * 4] / 255;
+  const soft = boxBlur(mask, cw, ch, 2);
+
+  // colore: marmo bianco con incavi scuri (come un'iscrizione dipinta)
+  const albC = mk(), actx = albC.getContext('2d');
+  const alb = actx.createImageData(cw, ch);
+  const ink = new THREE.Color(cfg.ink || '#3A3530');
+  const ir = Math.round(ink.r * 255), ig = Math.round(ink.g * 255), ib = Math.round(ink.b * 255);
+  // normal map dal rilievo (lettere in incavo)
+  const norC = mk(), nctx = norC.getContext('2d');
+  const nor = nctx.createImageData(cw, ch);
+  const strength = 3.2;
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const i = y * cw + x, k = mask[i] * 0.85 + soft[i] * 0.15;
+      alb.data[i * 4] = Math.round(255 + (ir - 255) * k);
+      alb.data[i * 4 + 1] = Math.round(255 + (ig - 255) * k);
+      alb.data[i * 4 + 2] = Math.round(255 + (ib - 255) * k);
+      alb.data[i * 4 + 3] = 255;
+      const xl = soft[y * cw + Math.max(0, x - 1)], xr = soft[y * cw + Math.min(cw - 1, x + 1)];
+      const yu = soft[Math.max(0, y - 1) * cw + x], yd = soft[Math.min(ch - 1, y + 1) * cw + x];
+      let nx = (xr - xl) * 0.5 * strength, ny = -(yd - yu) * 0.5 * strength;
+      const l = Math.hypot(nx, ny, 1);
+      nor.data[i * 4] = Math.round((nx / l * 0.5 + 0.5) * 255);
+      nor.data[i * 4 + 1] = Math.round((ny / l * 0.5 + 0.5) * 255);
+      nor.data[i * 4 + 2] = Math.round((1 / l * 0.5 + 0.5) * 255);
+      nor.data[i * 4 + 3] = 255;
+    }
+  }
+  actx.putImageData(alb, 0, 0);
+  nctx.putImageData(nor, 0, 0);
+  const albTex = new THREE.CanvasTexture(albC);
+  albTex.colorSpace = THREE.SRGBColorSpace;
+  albTex.anisotropy = Math.min(8, maxAnisotropy);
+  const norTex = new THREE.CanvasTexture(norC);
+  norTex.colorSpace = THREE.NoColorSpace;
+  norTex.anisotropy = Math.min(8, maxAnisotropy);
+
+  // ── geometria ──
+  const bodyMat = materials.makeMarble();
+  const faceMat = materials.makeMarble();
+  faceMat.map = albTex;
+  faceMat.normalMap = norTex;
+  faceMat.normalScale = new THREE.Vector2(1, 1);
+  faceMat.polygonOffset = true;
+  faceMat.polygonOffsetFactor = -2;
+  faceMat.polygonOffsetUnits = -2;
+
+  const baseY = DIM.FLOOR_Y - 0.004;
+  const plinth = new THREE.Mesh(new RoundedBoxGeometry(W + 0.07, PH, D + 0.06, 2, 0.006), bodyMat);
+  plinth.position.set(0, baseY + PH / 2, z0);
+  const slab = new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 3, 0.008), bodyMat);
+  slab.position.set(0, baseY + PH + H / 2, z0);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.014, H - 0.014), faceMat);
+  face.position.set(0, baseY + PH + H / 2, z0 + D / 2 + 0.0007);
+  for (const m of [plinth, slab]) { m.castShadow = true; m.receiveShadow = true; }
+  face.receiveShadow = true;
+  face.name = 'marble-plaque-face';
+  group.add(plinth, slab, face);
+
+  const colliders = [
+    { center: plinth.position.clone(), half: new THREE.Vector3((W + 0.07) / 2, PH / 2, (D + 0.06) / 2), rotX: 0 },
+    { center: slab.position.clone(), half: new THREE.Vector3(W / 2, H / 2, D / 2), rotX: 0 },
+  ];
+  return { group, colliders, materials: [bodyMat, faceMat] };
 }
 
 // ─────────────────────────────────────────────────────────────

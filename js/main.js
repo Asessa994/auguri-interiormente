@@ -4,7 +4,7 @@ import { DIM } from './dimensions.js';
 import { createMaterials, updateSculptSpace, glassReveal, addVeil } from './materials.js';
 import { createStudioEnvironment, createBackdrop, createLights } from './studio.js';
 import { buildGlobe } from './globe.js';
-import { loadDavid, createPlaceholder, buildSliceCollider, applyTransform } from './david.js';
+import { loadDavid, createPlaceholder, createColumnPlaceholder, buildSliceCollider, applyTransform } from './david.js';
 import { SnowSimulation, createSnowPoints } from './snow.js';
 import { MotionController, MotionState } from './motion.js';
 import { GestureController } from './gestures.js';
@@ -175,7 +175,12 @@ async function main() {
   const glassMode = params.get('glass') || CONFIG.glass;
   const fastGlass = glassMode === 'fast' || (glassMode !== 'refraction' && tierName !== 'high');
   const mats = createMaterials(renderer, CONFIG.palette, { fastGlass, lite: tierName !== 'high' });
+  // Scena: due colonne con lapide centrale (predefinita) oppure la testa del David
+  const useColumns = (params.get('scena') || CONFIG.scene) !== 'david';
   const globe = await buildGlobe(mats, CONFIG.palette, CONFIG.plaque, {
+    pedestal: !useColumns,
+    innerPlaque: !useColumns,
+    centralPlaque: useColumns ? CONFIG.centralPlaque : null,
     basePlaqueLines: CONFIG.basePlaque?.lines,
     maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
   });
@@ -183,8 +188,11 @@ async function main() {
   if (params.get('debug') === 'noglass') { globe.glass.visible = false; globe.edge.visible = false; }
   setProgress(0.2);
 
-  // Testa del David
-  const davidCfg = structuredClone(CONFIG.david);
+  // Sculture: colonne o David
+  const davidCfg = structuredClone(useColumns ? {
+    ...CONFIG.columns, autoFit: true, targetHeight: CONFIG.columns.height,
+    baseY: DIM.FLOOR_Y - 0.012, offset: [0, 0, 0], scale: 1,
+  } : CONFIG.david);
   // ?model= accetta solo file dello stesso sito (niente indirizzi esterni)
   // ?rot=x,y,z (gradi) per provare un orientamento senza toccare config.js
   const pr = params.get('rot');
@@ -195,12 +203,36 @@ async function main() {
   const dv = await loadDavid(davidCfg, mats, (f) => setProgress(0.22 + f * 0.6));
   let davidRoot;
   let davidHolder = null;
-  if (dv.ok) {
+  let sculptures;
+  if (useColumns) {
+    const cc = CONFIG.columns;
+    let left;
+    if (dv.ok) {
+      left = dv.root;
+      console.info(`[colonne] modello caricato: ${dv.triangles.toLocaleString('it-IT')} triangoli per colonna`);
+    } else {
+      left = createColumnPlaceholder(mats, cc.height);
+      left.position.y = DIM.FLOOR_Y - 0.012;
+      $('placeholder-badge').innerHTML = 'Segnaposto provvisorio · manca il modello della colonna <code>assets/ionic-column.glb</code>';
+      $('placeholder-badge').hidden = false;
+      body.classList.add('has-placeholder');
+      console.warn('[colonne] ' + dv.reason + ' — mostro colonne PROVVISORIE.');
+    }
+    const right = left.clone(true);
+    left.position.x = -cc.spacing;
+    right.position.x = cc.spacing;
+    left.position.z = right.position.z = cc.z ?? 0;
+    sculptures = [left, right];
+    davidRoot = new THREE.Group();
+    davidRoot.add(left, right);
+  } else if (dv.ok) {
     davidRoot = dv.root;
     davidHolder = dv.holder;
+    sculptures = [davidRoot];
     console.info(`[David] modello caricato: ${dv.triangles.toLocaleString('it-IT')} triangoli`);
   } else {
     davidRoot = createPlaceholder(mats);
+    sculptures = [davidRoot];
     $('placeholder-badge').hidden = false;
     body.classList.add('has-placeholder');
     console.warn('[David] ' + dv.reason + ' — mostro un segnaposto PROVVISORIO. Vedi assets/LEGGIMI-MODELLO.txt');
@@ -219,8 +251,11 @@ async function main() {
   const buildColliders = () => {
     globe.interior.updateWorldMatrix(true, true);
     const inv = globe.interior.matrixWorld.clone().invert();
-    const slices = buildSliceCollider([globe.pedestal, davidRoot], inv);
-    sim.setColliders({ slices, plaque: globe.plaque.collider });
+    const sliceSets = useColumns
+      ? sculptures.map((s) => buildSliceCollider([s], inv))
+      : [buildSliceCollider([globe.pedestal, davidRoot], inv)];
+    const boxes = [...(globe.plaque ? [globe.plaque.collider] : []), ...(globe.marblePlaque?.colliders || [])];
+    sim.setColliders({ sliceSets, boxes });
   };
   buildColliders();
   const snow = createSnowPoints(sim, CONFIG.palette, { softEdges: fastGlass });
@@ -436,7 +471,7 @@ async function main() {
   };
   const litMats = new Set([mats.marble, mats.stone, mats.brass, mats.snowBed]);
   davidRoot.traverse((o) => { if (o.isMesh) litMats.add(o.material); });
-  const plaqueMats = new Set([mats.plaqueBrass, mats.plaqueFace, mats.plaqueText, mats.enamel, ...(globe.basePlaque?.materials || [])]);
+  const plaqueMats = new Set([mats.plaqueBrass, mats.plaqueFace, mats.plaqueText, mats.enamel, ...(globe.basePlaque?.materials || []), ...(globe.marblePlaque?.materials || [])]);
   [...litMats, ...plaqueMats, mats.glass].forEach(remember);
   // velo verso il colore dello sfondo: gli oggetti emergono dal buio, non come sagome nere
   const bgLin = inverseNeutral(new THREE.Color(CONFIG.palette.background));

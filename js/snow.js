@@ -64,8 +64,8 @@ export class SnowSimulation {
     this._u = new Float32Array(3);
     this._stir = 0;
 
-    this.slices = null;
-    this.plaque = null;
+    this.sliceSets = [];
+    this.boxes = [];
 
     this.meanSpeed = 0;
     this.movingCount = 0;
@@ -75,15 +75,15 @@ export class SnowSimulation {
     this._initParticles();
   }
 
-  setColliders({ slices, plaque }) {
-    this.slices = slices;
-    if (plaque) {
-      this.plaque = {
-        cx: plaque.center.x, cy: plaque.center.y, cz: plaque.center.z,
-        c: Math.cos(plaque.rotX), s: Math.sin(plaque.rotX),
-        hx: plaque.half.x, hy: plaque.half.y, hz: plaque.half.z,
-      };
-    }
+  // sliceSets: sculture descritte come pile di ellissi (una per colonna);
+  // boxes: parallelepipedi (targhette, basamenti), eventualmente inclinati attorno a X.
+  setColliders({ slices = null, plaque = null, sliceSets = [], boxes = [] }) {
+    this.sliceSets = [...(slices ? [slices] : []), ...sliceSets];
+    this.boxes = [...(plaque ? [plaque] : []), ...boxes].map((b) => ({
+      cx: b.center.x, cy: b.center.y, cz: b.center.z,
+      c: Math.cos(b.rotX || 0), s: Math.sin(b.rotX || 0),
+      hx: b.half.x, hy: b.half.y, hz: b.half.z,
+    }));
     // risolve le compenetrazioni iniziali
     for (let i = 0; i < this.N; i++) this._collide(i);
   }
@@ -268,9 +268,11 @@ export class SnowSimulation {
       up = 1;
     }
 
-    // scultura (pila di ellissi)
-    const S = this.slices;
-    if (S && y > S.yMin && y < S.yMax + rad) {
+    // sculture (pile di ellissi)
+    for (let si = 0; si < this.sliceSets.length; si++) {
+    const S = this.sliceSets[si];
+    if (S.br !== undefined && (x - S.bx) * (x - S.bx) + (z - S.bz) * (z - S.bz) > (S.br + rad) * (S.br + rad)) continue;
+    if (y > S.yMin && y < S.yMax + rad) {
       let f = (y - S.yMin) / S.dy;
       let k = Math.floor(f);
       let t = f - k;
@@ -318,10 +320,11 @@ export class SnowSimulation {
         }
       }
     }
+    }
 
-    // targhetta (parallelepipedo inclinato)
-    const P = this.plaque;
-    if (P) {
+    // targhette e basamenti (parallelepipedi, anche inclinati)
+    for (let bi = 0; bi < this.boxes.length; bi++) {
+      const P = this.boxes[bi];
       const dx = x - P.cx, dy = y - P.cy, dz = z - P.cz;
       const lx = dx;
       const ly = P.c * dy + P.s * dz;

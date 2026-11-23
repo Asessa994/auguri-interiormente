@@ -6,7 +6,13 @@ Il progetto è statico (HTML, CSS, JavaScript, Three.js incluso): non serve ness
 
 ---
 
-## 1. Il modello del David
+## 1. Colonne e lapide (e il David, se serve)
+
+Nella sfera ci sono due colonne ioniche (`assets/ionic-column.glb`, ottimizzato: 270 KB invece di 980, texture a 1024 px) usate due volte, con al centro una lapide in marmo con l'iscrizione «Interiormente / Design» generata dalla pagina (testo, misure e colore delle lettere in `centralPlaque` di `js/config.js`). Misure e distanza delle colonne sono in `columns`.
+
+Per tornare alla testa del David basta scrivere `scene: 'david'` in `js/config.js` (o provare con `?scena=david`): il file è ancora in `assets/`.
+
+### Il modello del David
 
 Il modello è incluso in `assets/david-head.glb`: la versione ottimizzata scaricata da Sketchfab, ricompressa (2 MB invece di 4,8, stesso dettaglio) e girata di 50° perché il volto guardi verso chi osserva (`david.rotationDeg` in `js/config.js`). Se il file mancasse, nella sfera comparirebbe un **segnaposto astratto**, segnalato come *provvisorio*. Per usare un altro modello segui le istruzioni qui sotto.
 
@@ -57,7 +63,7 @@ Poi apri `http://localhost:8080`. I sensori del telefono richiedono HTTPS: per p
 3. *Settings → Pages → Build and deployment*: *Deploy from a branch*, ramo `main`, cartella `/ (root)`.
 4. Dopo un minuto il sito è su **https://asessa994.github.io/auguri-interiormente/**.
 
-**Aggiornamenti:** GitHub Pages fa tenere ai telefoni una copia dei file per circa 10 minuti. Per non mescolare file vecchi e nuovi, ogni volta che modifichi qualcosa in `js/` o `css/` apri `index.html` e sostituisci ovunque `v=6` con `v=7` (poi `v=8`, e così via).
+**Aggiornamenti:** GitHub Pages fa tenere ai telefoni una copia dei file per circa 10 minuti. Per non mescolare file vecchi e nuovi, ogni volta che modifichi qualcosa in `js/` o `css/` apri `index.html` e sostituisci ovunque `v=7` con `v=8` (poi `v=9`, e così via).
 
 Se usi un altro nome di repository o un dominio tuo, sostituisci l'indirizzo nelle righe `og:url` e `og:image` di `index.html`.
 

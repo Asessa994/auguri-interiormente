@@ -52,6 +52,8 @@ export async function loadDavid(cfg, materials, onProgress) {
     if (cfg.keepScanMaps && src) {
       if (src.normalMap) { m.normalMap = src.normalMap; m.normalScale = src.normalScale?.clone() ?? new THREE.Vector2(1, 1); }
       if (src.aoMap) { m.aoMap = src.aoMap; m.aoMapIntensity = 1; }
+      // colore del modello (ombre e dettagli "cotti" nella texture), moltiplicato per il marmo
+      if (cfg.keepScanColor && src.map) m.map = src.map;
     }
     m.color.multiplyScalar(cfg.marbleTint ?? 1);
     o.material = m;
@@ -89,8 +91,24 @@ export function applyTransform(root, holder, cfg) {
   } else {
     holder.scale.setScalar(cfg.scale);
   }
-  root.position.set(cfg.offset[0], DIM.PED_TOP - 0.004 + cfg.offset[1], cfg.offset[2]);
+  root.position.set(cfg.offset[0], (cfg.baseY ?? DIM.PED_TOP - 0.004) + cfg.offset[1], cfg.offset[2]);
   root.updateMatrixWorld(true);
+}
+
+// Colonna di riserva (PROVVISORIA) se manca il file della colonna.
+export function createColumnPlaceholder(materials, height) {
+  const p = [
+    [0, 0], [0.32, 0], [0.32, 0.05], [0.3, 0.07], [0.28, 0.1], [0.24, 0.12], [0.235, 0.15],
+    [0.21, 0.86], [0.24, 0.875], [0.3, 0.9], [0.36, 0.93], [0.36, 0.97], [0.3, 1.0], [0, 1.0],
+  ].map(([r, y]) => new THREE.Vector2(r * height / 3.1, y * height));
+  const g = new THREE.LatheGeometry(p, 48);
+  g.computeVertexNormals();
+  const root = new THREE.Group();
+  const mesh = new THREE.Mesh(g, materials.marble);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  root.add(mesh);
+  return root;
 }
 
 function describeLoadError(err, url) {
@@ -170,6 +188,10 @@ export function buildSliceCollider(objects, spaceInverse, { slices = 64, shrink 
     rx[k] = ((maxX[k] - minX[k]) / 2) * shrink;
     rz[k] = ((maxZ[k] - minZ[k]) / 2) * shrink;
   }
-  // l'ultima sezione si chiude: il cranio diventa una cupola
-  return { yMin, yMax, dy, n, cx, cz, rx, rz };
+  // cerchio che contiene tutta la scultura (per scartare in fretta i fiocchi lontani)
+  let bx = 0, bz = 0, cnt = 0, br = 0;
+  for (let k = 0; k <= n; k++) if (rx[k] > 0) { bx += cx[k]; bz += cz[k]; cnt++; }
+  bx /= Math.max(1, cnt); bz /= Math.max(1, cnt);
+  for (let k = 0; k <= n; k++) if (rx[k] > 0) br = Math.max(br, Math.hypot(cx[k] - bx, cz[k] - bz) + Math.max(rx[k], rz[k]));
+  return { yMin, yMax, dy, n, cx, cz, rx, rz, bx, bz, br };
 }

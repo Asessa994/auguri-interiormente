@@ -51,7 +51,32 @@ export const CONFIG = {
     holdSeconds: 3,            // tempo in cui la frase resta pienamente leggibile
   },
 
-  // Modello 3D della testa del David (GLB o glTF).
+  // Cosa c'è nella sfera: 'colonne' (due colonne ioniche e lapide centrale)
+  // oppure 'david' (la testa del David). Si può provare anche con ?scena=david
+  scene: 'colonne',
+
+  // Colonne ioniche (lo stesso modello usato due volte, ai lati).
+  columns: {
+    url: './assets/ionic-column.glb',
+    height: 1.2,               // altezza di ciascuna colonna (la sfera ha raggio 1)
+    spacing: 0.4,              // distanza di ogni colonna dal centro
+    z: -0.07,                  // un poco arretrate rispetto alla lapide
+    rotationDeg: [0, 0, 0],
+    keepScanMaps: true,        // scanalature e dettagli dalla normal map del modello
+    keepScanColor: true,       // ombreggiature "cotte" nella texture del modello
+    marbleTint: 1.06,          // >1 schiarisce il marmo delle colonne
+  },
+
+  // Lapide in marmo al centro, davanti alle colonne.
+  centralPlaque: {
+    lines: ['Interiormente', 'Design'],
+    width: 0.64,
+    height: 0.38,
+    z: 0.15,
+    ink: '#3A3530',            // colore delle lettere incise
+  },
+
+  // Modello 3D della testa del David (usato con scene: 'david').
   david: {
     url: './assets/david-head.glb',
     autoFit: true,             // scala e centra automaticamente il modello sul supporto
