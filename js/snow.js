@@ -28,7 +28,10 @@ function rand(seed) {
 }
 
 export class SnowSimulation {
-  constructor(maxCount, { reducedMotion = false } = {}) {
+  constructor(maxCount, { reducedMotion = false, fineTurbulence = true, maxVortices = MAX_VORTICES } = {}) {
+    this.fineTurbulence = fineTurbulence; // seconda ottava di turbolenza (solo su computer)
+    this.maxVortices = maxVortices;
+    this._frame = 0;
     this.N = maxCount;
     this.active = maxCount;
     this.reducedMotion = reducedMotion;
@@ -90,8 +93,8 @@ export class SnowSimulation {
     const R = this.random;
     for (let i = 0; i < this.N; i++) {
       const u = R();
-      const d = 0.0072 + 0.0165 * Math.pow(u, 2.4);  // diametro visivo (neve fine)
-      const k = (d - 0.0072) / 0.0165;
+      const d = 0.0082 + 0.018 * Math.pow(u, 2.4);   // diametro visivo (neve fine)
+      const k = (d - 0.0082) / 0.018;
       this.size[i] = d;
       this.rad[i] = d * 0.5;
       this.sink[i] = 0.042 + 0.055 * k + R() * 0.018; // velocità limite (raggi/s)
@@ -181,7 +184,7 @@ export class SnowSimulation {
       c = new THREE.Vector3((R() * 2 - 1) * 0.55, DIM.FLOOR_Y + 0.2 + R() * 1.0, (R() * 2 - 1) * 0.55);
     } while (c.length() > 0.62);
     const v = { c, a: axis, s: strength, r: 0.3 + R() * 0.26 };
-    if (this.vortices.length < MAX_VORTICES) this.vortices.push(v);
+    if (this.vortices.length < this.maxVortices) this.vortices.push(v);
     else {
       // energia aggiunta al vortice più debole: niente ripartenze da zero
       let w = 0;
@@ -218,7 +221,7 @@ export class SnowSimulation {
     ux += amp * 0.5 * (Math.sin(k1 * z + ph) + Math.cos(k1 * y - 0.7 * ph));
     uy += amp * 0.5 * (Math.sin(k1 * x + 1.3 * ph) + Math.cos(k1 * z + 0.5 * ph));
     uz += amp * 0.5 * (Math.sin(k1 * y - 0.9 * ph) + Math.cos(k1 * x + 1.1 * ph));
-    if (this.E > 0.05) {
+    if (this.fineTurbulence && this.E > 0.05) {
       const a2 = this.E * 0.11, k2 = 7.1, p2 = t * 0.9;
       ux += a2 * (Math.sin(k2 * z - p2) + Math.cos(k2 * y + p2));
       uy += a2 * (Math.sin(k2 * x + p2) + Math.cos(k2 * z - p2));
@@ -436,7 +439,9 @@ export class SnowSimulation {
     this.asleep = false;
     const p = this.pos, v = this.vel, t = this.time;
     const R = this.random;
-    for (let i = 0; i < this.active; i++) {
+    // i fiocchi depositati vengono controllati a turno (1/3 per fotogramma): costo ridotto, risposta entro ~50 ms
+    const phase = this._frame++ % 3;
+    for (let i = phase; i < this.active; i += 3) {
       if (!this.rest[i]) continue;
       const o = i * 3;
       const u = this._fluid(p[o], p[o + 1], p[o + 2], t);
@@ -477,6 +482,7 @@ export function createSnowPoints(sim, palette, { softEdges = false } = {}) {
       uScale: { value: 500 },
       uSizeBoost: { value: 1 },
       uDpr: { value: 1 },
+      uBright: { value: 1 },
       uTime: { value: 0 },
       uColor: { value: new THREE.Color(palette.snow) },
       uLightDir: { value: new THREE.Vector3(-0.5, 0.6, 0.6).normalize() },
@@ -489,6 +495,7 @@ export function createSnowPoints(sim, palette, { softEdges = false } = {}) {
       uniform float uScale;
       uniform float uSizeBoost;
       uniform float uDpr;
+      uniform float uBright;
       varying float vSeed;
       varying float vSpark;
       varying float vFade;
@@ -500,7 +507,7 @@ export function createSnowPoints(sim, palette, { softEdges = false } = {}) {
         gl_Position = projectionMatrix * mv;
         // su schermi piccoli i fiocchi crescono un po' per restare visibili; minimo ~2 px CSS
         float px = aSize * uSizeBoost * uScale / -mv.z;
-        float minPx = 2.0 * uDpr;
+        float minPx = 2.2 * uDpr;
         gl_PointSize = max( px, minPx );
         vFade = clamp( px / minPx, 0.6, 1.0 );
         vSeed = aSeed;
@@ -511,11 +518,13 @@ export function createSnowPoints(sim, palette, { softEdges = false } = {}) {
       uniform vec3 uColor;
       uniform vec3 uLightDir;
       uniform float uTime;
+      uniform float uBright;
       varying float vSeed;
       varying float vSpark;
       varying float vFade;
       varying float vFloor;
       void main() {
+        if ( uBright < 0.01 ) discard;   // neve ancora al buio durante lo svelamento
         vec2 c = gl_PointCoord * 2.0 - 1.0;
         float r2 = dot( c, c );
         #if SOFT_EDGES == 1
@@ -526,12 +535,12 @@ export function createSnowPoints(sim, palette, { softEdges = false } = {}) {
         // fiocco piatto e opaco: leggera luce dal lato della lampada, nessun bordo scuro
         float side = clamp( dot( c * vec2( 1.0, -1.0 ), normalize( uLightDir.xy + 1e-4 ) ) * 0.5 + 0.5, 0.0, 1.0 );
         // lato in luce più chiaro, lato in ombra appena grigio: il fiocco si stacca dal fondo chiaro
-        vec3 col = uColor * ( 0.8 + 0.3 * side ) * ( 0.94 + 0.06 * vSeed ) * mix( 0.9, 1.0, vFade );
+        vec3 col = uColor * ( 0.84 + 0.24 * side ) * ( 0.95 + 0.05 * vSeed ) * mix( 0.92, 1.0, vFade ) * uBright;
         float glint = pow( max( 0.0, sin( uTime * ( 1.1 + vSeed * 2.6 ) + vSeed * 61.0 ) ), 36.0 ) * vSpark;
         col += glint * 0.5 * ( 1.0 - vFloor );
         col *= 1.0 - 0.1 * vFloor;   // i fiocchi depositati si fondono con il letto di neve
         #if SOFT_EDGES == 1
-          float a = 1.0 - smoothstep( 0.55, 1.0, r2 );
+          float a = ( 1.0 - smoothstep( 0.8, 1.0, r2 ) ) * min( 1.0, uBright * 1.5 );   // nucleo pieno, solo il bordo sfuma
         #else
           float a = 1.0;
         #endif

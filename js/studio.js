@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DIM } from './dimensions.js';
+import { inverseNeutral } from './tonemap.js';
 
 // ─────────────────────────────────────────────────────────────
 //  Set fotografico: environment map da studio (softbox), fondale
@@ -92,14 +93,18 @@ export function createBackdrop(palette, keyDirection) {
 
   const mat = new THREE.ShaderMaterial({
     uniforms: {
-      uColor: { value: new THREE.Color(palette.background) },
-      uEdge: { value: new THREE.Color(palette.backgroundEdge) },
+      // colori "pre-compensati": dopo il tone mapping coincidono con quelli della palette
+      uColor: { value: inverseNeutral(new THREE.Color(palette.background)) },
+      uEdge: { value: inverseNeutral(new THREE.Color(palette.backgroundEdge)) },
       uGround: { value: G },
       uShadowDir: { value: sh },
       uReach: { value: reach },
       uSeatH: { value: DIM.SEAT_Y - G },
       uGlobeH: { value: -G },
       uShadowStrength: { value: 1 },
+      uPool: { value: palette.backdropLight ?? 0.05 },
+      uWallDark: { value: palette.wallDarken ?? 0.62 },
+      uStage: { value: 1 },        // 0 = fondo piatto (come l'introduzione), 1 = set illuminato
     },
     vertexShader: /* glsl */ `
       varying vec3 vW;
@@ -118,6 +123,9 @@ export function createBackdrop(palette, keyDirection) {
       uniform float uSeatH;
       uniform float uGlobeH;
       uniform float uShadowStrength;
+      uniform float uPool;
+      uniform float uWallDark;
+      uniform float uStage;
       varying vec3 vW;
 
       float sdCapsule( vec2 p, vec2 a, vec2 b, float r ) {
@@ -136,9 +144,9 @@ export function createBackdrop(palette, keyDirection) {
         // parete di fondo più scura (fondale "a sfumatura" da still life):
         // vista attraverso il vetro dà contrasto alla neve bianca
         float wall = smoothstep( 0.25, 2.2, h );
-        col = mix( col, uEdge * 0.9, wall * 0.62 );
+        col = mix( col, uEdge * 0.9, wall * uWallDark );
         // pozza di luce dietro l'oggetto, leggermente a sinistra
-        col *= 1.0 + 0.05 * ( 1.0 - smoothstep( 0.0, 3.5, length( vec2( vW.x + 0.8, along - 1.6 ) ) ) );
+        col *= 1.0 + uPool * ( 1.0 - smoothstep( 0.0, 3.8, length( vec2( vW.x + 0.6, along - 1.7 ) ) ) );
 
         // ombre solo sul pavimento
         float onFloor = 1.0 - smoothstep( 0.02, 0.4, h );
@@ -163,8 +171,10 @@ export function createBackdrop(palette, keyDirection) {
           float caustic = ( 1.0 - smoothstep( 0.0, 0.38, length( vec2( u + 0.12, v ) ) ) ) * 0.22;
           float shadow = max( max( contact, baseSh ), globeSh );
           col *= 1.0 - shadow * onFloor * uShadowStrength;
-          col += uColor * caustic * onFloor * uShadowStrength * vec3( 1.0, 0.95, 0.85 );
+          col += max( uColor, vec3( 0.05 ) ) * caustic * onFloor * uShadowStrength * vec3( 1.0, 0.95, 0.85 ) * ( 1.0 + uPool * 2.0 );
         }
+        // durante lo svelamento il set "si accende" partendo dal colore piatto dell'introduzione
+        col = mix( uColor, col, uStage );
         gl_FragColor = vec4( col, 1.0 );
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

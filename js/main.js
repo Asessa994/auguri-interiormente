@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { DIM } from './dimensions.js';
-import { createMaterials, updateSculptSpace } from './materials.js';
+import { createMaterials, updateSculptSpace, glassReveal, addVeil } from './materials.js';
 import { createStudioEnvironment, createBackdrop, createLights } from './studio.js';
 import { buildGlobe } from './globe.js';
 import { loadDavid, createPlaceholder, buildSliceCollider, applyTransform } from './david.js';
@@ -11,6 +11,9 @@ import { GestureController } from './gestures.js';
 import { setupTunePanel } from './tune.js';
 import { captureOgImage } from './capture.js';
 import { fitCamera, placeCamera, CAMERA_FOV, DEFAULT_EL, TARGET } from './framing.js';
+import { Intro } from './intro.js';
+import { Music } from './music.js';
+import { inverseNeutral } from './tonemap.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
@@ -19,9 +22,9 @@ const body = document.body;
 
 // ── Qualità ──────────────────────────────────────────────────
 const TIERS = {
-  low: { dprMax: 1.3, dprMin: 0.85, particles: 1500, shadow: 1024, transmission: 0.85 },
-  medium: { dprMax: 1.6, dprMin: 1.0, particles: 2200, shadow: 1024, transmission: 1.0 },
-  high: { dprMax: 2.0, dprMin: 1.0, particles: 2800, shadow: 2048, transmission: 1.0 },
+  low: { dprMax: 1.3, dprMin: 0.85, particles: 2400, shadow: 1024, transmission: 0.85 },
+  medium: { dprMax: 1.6, dprMin: 1.0, particles: 3200, shadow: 1024, transmission: 1.0 },
+  high: { dprMax: 2.0, dprMin: 1.0, particles: 4000, shadow: 2048, transmission: 1.0 },
 };
 
 function detectTier() {
@@ -43,6 +46,7 @@ function applyPalette(p) {
   s.setProperty('--text-soft', p.textSoft);
   s.setProperty('--brass', p.brass);
   s.setProperty('--stone', p.stone);
+  s.setProperty('--ivory', p.text);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = p.background;
 }
@@ -75,15 +79,15 @@ function setStatus(text, ms = 6000) {
   if (text && ms) statusTimer = setTimeout(() => el.classList.remove('is-visible'), ms);
 }
 
-function setProgress(f, label) {
-  const v = Math.round(Math.max(0, Math.min(1, f)) * 100);
-  $('loader-fill').style.width = v + '%';
-  $('loader').setAttribute('aria-valuenow', String(v));
-  if (label) $('loader-text').textContent = label;
+let intro = null;
+function setProgress(f) {
+  intro?.setProgress(f);
 }
 
 function showError(message) {
   clearTimeout(window.__loadTimeout);
+  const ie = $('intro');
+  if (ie) ie.hidden = true;
   $('error-msg').textContent = message;
   $('error').hidden = false;
   body.classList.remove('is-loading');
@@ -99,6 +103,26 @@ async function main() {
   let reducedMotion = reducedMQ.matches;
   const tierName = detectTier();
   const tier = TIERS[tierName];
+
+  // Musica: parte al primo gesto dell'utente (anche il tocco che salta l'introduzione).
+  const musicBtn = $('btn-music');
+  const music = new Music(CONFIG.music, (m) => {
+    musicBtn.setAttribute('aria-pressed', m.enabled ? 'true' : 'false');
+    musicBtn.setAttribute('aria-label', m.enabled ? 'Disattiva la musica' : 'Attiva la musica');
+    musicBtn.classList.toggle('is-off', !m.enabled);
+    if (m.failed) musicBtn.hidden = true;
+  });
+  musicBtn.setAttribute('aria-pressed', music.enabled ? 'true' : 'false');
+  musicBtn.classList.toggle('is-off', !music.enabled);
+  musicBtn.addEventListener('click', (e) => { e.stopPropagation(); music.toggle(); });
+  // fase di "bolla": il pulsante dei sensori chiede prima il suo permesso, poi parte la musica
+  for (const type of ['pointerup', 'touchend', 'click', 'keydown']) {
+    document.addEventListener(type, () => music.unlock(), { passive: true });
+  }
+
+  // Introduzione (parte subito, mentre la scena si carica)
+  intro = new Intro({ ...CONFIG.intro, reduced: reducedMotion, onTap: () => music.unlock(), skip: params.has('skipintro') || params.has('capture') });
+  const introDone = intro.run();
 
   let renderer;
   try {
@@ -123,7 +147,7 @@ async function main() {
   });
   canvas.addEventListener('webglcontextrestored', () => location.reload());
 
-  setProgress(0.08, 'Preparazione della sfera…');
+  setProgress(0.08);
 
   // Scena
   const scene = new THREE.Scene();
@@ -145,7 +169,10 @@ async function main() {
   const glassMode = params.get('glass') || CONFIG.glass;
   const fastGlass = glassMode === 'fast' || (glassMode !== 'refraction' && tierName !== 'high');
   const mats = createMaterials(renderer, CONFIG.palette, { fastGlass, lite: tierName !== 'high' });
-  const globe = await buildGlobe(mats, CONFIG.palette, CONFIG.plaque);
+  const globe = await buildGlobe(mats, CONFIG.palette, CONFIG.plaque, {
+    basePlaqueLines: CONFIG.basePlaque?.lines,
+    maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
+  });
   object.add(globe.group);
   if (params.get('debug') === 'noglass') { globe.glass.visible = false; globe.edge.visible = false; }
   setProgress(0.2);
@@ -153,9 +180,12 @@ async function main() {
   // Testa del David
   const davidCfg = structuredClone(CONFIG.david);
   // ?model= accetta solo file dello stesso sito (niente indirizzi esterni)
+  // ?rot=x,y,z (gradi) per provare un orientamento senza toccare config.js
+  const pr = params.get('rot');
+  if (pr && /^-?[\d.]+,-?[\d.]+,-?[\d.]+$/.test(pr)) davidCfg.rotationDeg = pr.split(',').map(Number);
   const pm = params.get('model');
   if (pm && /^[\w./-]+\.(glb|gltf)$/i.test(pm) && !pm.startsWith('//')) davidCfg.url = pm;
-  setProgress(0.22, 'Caricamento della scultura…');
+  setProgress(0.22);
   const dv = await loadDavid(davidCfg, mats, (f) => setProgress(0.22 + f * 0.6));
   let davidRoot;
   let davidHolder = null;
@@ -171,11 +201,15 @@ async function main() {
   }
   globe.interior.add(davidRoot);
 
-  setProgress(0.86, 'Ultimi ritocchi…');
+  setProgress(0.86);
   await mats.ready;
 
   // Neve + collisori
-  const sim = new SnowSimulation(tier.particles, { reducedMotion });
+  const sim = new SnowSimulation(tier.particles, {
+    reducedMotion,
+    fineTurbulence: tierName === 'high',
+    maxVortices: tierName === 'high' ? 7 : 5,
+  });
   const buildColliders = () => {
     globe.interior.updateWorldMatrix(true, true);
     const inv = globe.interior.matrixWorld.clone().invert();
@@ -188,8 +222,9 @@ async function main() {
   const posAttr = snow.geometry.attributes.position;
 
   // Camera e impaginazione
-  const intro = { t: reducedMotion ? 1 : 0, dur: 2.8 };
-  let introEaseNow = intro.t;
+  // Svelamento: prima il riflesso del vetro, poi il David illuminato, infine le targhette.
+  const reveal = { t: 0, dur: reducedMotion ? 0.35 : 5.2, running: false, done: false };
+  let introEaseNow = reducedMotion ? 1 : 0;
   const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 140);
   const target = TARGET;
   const view = { az: 0, el: DEFAULT_EL, azT: 0, elT: DEFAULT_EL, dist: 10, radiusPx: 150 };
@@ -297,6 +332,7 @@ async function main() {
   $('btn-shake').addEventListener('click', shakeButton);
 
   // Sensori di movimento
+  const pendingMotion = { x: 0, y: 0, z: 0, n: 0 };
   const motionBtn = $('btn-motion');
   const touchLike = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || params.has('motion');
   if (touchLike) motionBtn.hidden = false;
@@ -313,8 +349,12 @@ async function main() {
     config: CONFIG.motion,
     onImpulse: (sx, sy, sz) => {
       if (document.hidden) return;
+      // gli impulsi dei sensori si sommano e vengono applicati una volta per fotogramma:
+      // movimento più fluido e meno lavoro per il telefono
       const g = CONFIG.motion.gain;
-      shakeScreen(sx * g, sy * g, sz * g, 0.35);
+      pendingMotion.x += sx * g; pendingMotion.y += sy * g; pendingMotion.z += sz * g;
+      pendingMotion.n++;
+      needsRender = true;
     },
     onState: (state, detail) => {
       if (detail && state !== MotionState.ACTIVE) console.warn('[sensori]', state, detail);
@@ -368,12 +408,62 @@ async function main() {
     sim.reducedMotion = reducedMotion;
   });
 
+  // Environment assegnato a ogni materiale: così l'intensità dei riflessi è
+  // controllabile materiale per materiale (serve allo svelamento).
+  const envTex = scene.environment;
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (m.isMeshStandardMaterial && !m.envMap) {
+        m.envMap = envTex;
+        m.envMapIntensity = 0.85;
+        m.needsUpdate = true;
+      }
+    }
+  });
+
+  // ── Materiali e luci coinvolti nello svelamento ───────────
+  const remember = (m) => {
+    if (!m || m.userData.rv) return m;
+    m.userData.rv = { env: m.envMapIntensity ?? 1, color: m.color ? m.color.clone() : null, emissive: m.emissiveIntensity ?? 0 };
+    return m;
+  };
+  const litMats = new Set([mats.marble, mats.stone, mats.brass, mats.snowBed]);
+  davidRoot.traverse((o) => { if (o.isMesh) litMats.add(o.material); });
+  const plaqueMats = new Set([mats.plaqueBrass, mats.plaqueFace, mats.plaqueText, mats.enamel, ...(globe.basePlaque?.materials || [])]);
+  [...litMats, ...plaqueMats, mats.glass].forEach(remember);
+  // velo verso il colore dello sfondo: gli oggetti emergono dal buio, non come sagome nere
+  const bgLin = inverseNeutral(new THREE.Color(CONFIG.palette.background));
+  const veilColor = { value: new THREE.Vector3(bgLin.r, bgLin.g, bgLin.b) };
+  const litShow = { value: 1 }, plaqueShow = { value: 1 };
+  for (const m of litMats) addVeil(m, litShow, veilColor);
+  for (const m of plaqueMats) addVeil(m, litShow, veilColor, plaqueShow);
+  const lightBase = { key: lights.key.intensity, fill: lights.fill.intensity, rim: lights.rim.intensity };
+  const backdrop = scene.getObjectByName('backdrop');
+  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+  function applyReveal(g, l, p) {
+    glassReveal.value = g;
+    mats.glass.envMapIntensity = mats.glass.userData.rv.env * g;
+    globe.edge.material.uniforms.uOpacity.value = g;
+    lights.key.intensity = lightBase.key * l;
+    lights.fill.intensity = lightBase.fill * l;
+    lights.rim.intensity = lightBase.rim * l;
+    for (const m of litMats) m.envMapIntensity = m.userData.rv.env * (0.25 + 0.75 * l);
+    litShow.value = Math.min(1, l * 1.15);
+    backdrop.material.uniforms.uStage.value = l;
+    snow.material.uniforms.uBright.value = l;
+    plaqueShow.value = p;
+  }
+
   // Compilazione anticipata degli shader (evita scatti al primo fotogramma)
   try { await renderer.compileAsync(scene, camera); } catch { /* opzionale */ }
 
   setProgress(1);
   renderer.shadowMap.needsUpdate = true;
   updateSculptSpace(globe.interior);
+  applyReveal(reducedMotion ? 1 : 0, reducedMotion ? 1 : 0, reducedMotion ? 1 : 0);
+  updateCamera(introEaseNow);
   renderer.render(scene, camera);
 
   // ── Ciclo di animazione ───────────────────────────────────
@@ -427,12 +517,40 @@ async function main() {
     const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
 
-    // ingresso
-    let introEase = 1;
-    if (intro.t < 1) {
-      intro.t = Math.min(1, intro.t + dt / intro.dur);
-      introEase = 1 - Math.pow(1 - intro.t, 3);
+    // svelamento: riflesso del vetro → David illuminato → targhette; camera quasi ferma
+    let introEase = introEaseNow;
+    if (reveal.running && !reveal.done) {
+      reveal.t += dt;
+      const t = reveal.t;
+      if (reducedMotion) {
+        applyReveal(1, 1, 1);
+        introEase = 1;
+      } else {
+        applyReveal(smooth(0.0, 1.7, t), smooth(1.2, 3.5, t), smooth(3.1, 4.6, t));
+        const k = Math.min(1, t / reveal.dur);
+        introEase = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      }
+      if (t >= (reducedMotion ? 0.3 : 4.4) && !body.classList.contains('is-revealed')) {
+        body.classList.add('is-revealed');
+        musicBtn.hidden = music.failed === true;
+      }
+      if (t >= reveal.dur) {
+        reveal.done = true;
+        applyReveal(1, 1, 1);
+        introEase = 1;
+        if (!body.classList.contains('is-revealed')) {
+          body.classList.add('is-revealed');
+          musicBtn.hidden = music.failed === true;
+        }
+      }
       needsRender = true;
+    }
+
+    // impulsi dei sensori raccolti dall'ultimo fotogramma
+    if (pendingMotion.n) {
+      shakeScreen(pendingMotion.x, pendingMotion.y, pendingMotion.z, 0.35);
+      pendingMotion.x = pendingMotion.y = pendingMotion.z = 0;
+      pendingMotion.n = 0;
     }
 
     // camera (rotazione di osservazione smorzata)
@@ -440,7 +558,7 @@ async function main() {
     const camMoving = Math.abs(view.azT - view.az) > 1e-4 || Math.abs(view.elT - view.el) > 1e-4;
     view.az += (view.azT - view.az) * kc;
     view.el += (view.elT - view.el) * kc;
-    if (camMoving || intro.t < 1 || needsRender) updateCamera(introEase);
+    if (camMoving || (reveal.running && !reveal.done) || needsRender) updateCamera(introEase);
 
     // oscillazione smorzata (molla sottosmorzata) + aggancio
     const wobActive = Math.abs(wob.x) + Math.abs(wob.z) + Math.abs(wob.wx) + Math.abs(wob.wz) > 1e-5
@@ -506,7 +624,9 @@ async function main() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       running = false;
+      music.suspend();
     } else if (!running) {
+      music.resume();
       running = true;
       last = performance.now();
       needsRender = true;
@@ -514,10 +634,14 @@ async function main() {
     }
   });
 
-  // Rivela la scena
+  // Scena pronta: l'introduzione può concludersi, poi parte lo svelamento
   clearTimeout(window.__loadTimeout);
+  intro.sceneReady();
+  await introDone;
   body.classList.remove('is-loading');
   body.classList.add('is-ready');
+  intro.finish();
+  reveal.running = true;
   last = performance.now();
   requestAnimationFrame(frame);
 
@@ -533,11 +657,12 @@ async function main() {
     setStatus('Il pannello di regolazione richiede il file del David in assets/david-head.glb.', 0);
   }
   if (params.has('capture')) {
+    await new Promise((r) => { const c = () => (reveal.done ? r() : setTimeout(c, 100)); c(); });
     captureOgImage({ renderer, scene, camera, shake: shakeButton, view, palette: CONFIG.palette, restore: applyLayout, snow, updateSculptSpace: () => updateSculptSpace(globe.interior) });
   }
 
   // per le verifiche automatiche
-  window.__sfera = { sim, view, motion, shakeButton, shakeScreen, renderer, scene, camera, get greetingShown() { return greetingShown; }, tier: tierName, fastGlass, get dpr() { return dpr; }, get frames() { return renderedFrames; }, placeholder: !dv.ok };
+  window.__sfera = { sim, view, motion, shakeButton, shakeScreen, renderer, scene, camera, get greetingShown() { return greetingShown; }, tier: tierName, fastGlass, music, reveal, get dpr() { return dpr; }, get frames() { return renderedFrames; }, placeholder: !dv.ok };
 }
 
 main().catch((err) => {

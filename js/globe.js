@@ -30,6 +30,16 @@ function baseProfile() {
   ];
 }
 
+// Raggio esterno della base a una certa quota (per appoggiarvi la targhetta).
+function baseRadiusAt(y) {
+  const pts = baseProfile().filter(([r]) => r > 0.5);
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [r0, y0] = pts[i], [r1, y1] = pts[i + 1];
+    if (y1 !== y0 && (y - y0) * (y - y1) <= 0) return r0 + ((r1 - r0) * (y - y0)) / (y1 - y0);
+  }
+  return 0.9;
+}
+
 function pedestalProfile() {
   const F = DIM.FLOOR_Y - 0.03;
   const T = DIM.PED_TOP;
@@ -81,6 +91,7 @@ function glassEdgeMaterial() {
     depthWrite: false,
     uniforms: {
       uTint: { value: new THREE.Color('#3B3F3C') },
+      uOpacity: { value: 1 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vN; varying vec3 vV;
@@ -93,6 +104,7 @@ function glassEdgeMaterial() {
     `,
     fragmentShader: /* glsl */ `
       uniform vec3 uTint;
+      uniform float uOpacity;
       varying vec3 vN; varying vec3 vV;
       void main() {
         float f = 1.0 - abs( dot( normalize( vN ), normalize( vV ) ) );
@@ -100,14 +112,14 @@ function glassEdgeMaterial() {
         float line = smoothstep( 0.965, 0.995, f );
         vec3 col = mix( uTint, vec3( 1.0 ), line * 0.75 );
         float a = band * 0.2 + line * 0.12;
-        gl_FragColor = vec4( col, a );
+        gl_FragColor = vec4( col, a * uOpacity );
         #include <colorspace_fragment>
       }
     `,
   });
 }
 
-export async function buildGlobe(materials, palette, plaqueCfg) {
+export async function buildGlobe(materials, palette, plaqueCfg, { basePlaqueLines = null, maxAnisotropy = 8 } = {}) {
   const group = new THREE.Group();
   group.name = 'globe';
 
@@ -132,6 +144,13 @@ export async function buildGlobe(materials, palette, plaqueCfg) {
   const ring = new THREE.Mesh(lathe(ringProfile, 160), materials.brass);
   ring.name = 'seat-ring';
   group.add(ring);
+
+  // Targhetta in oro sulla base.
+  let basePlaque = null;
+  if (basePlaqueLines && basePlaqueLines.length) {
+    basePlaque = await buildBasePlaque(palette, basePlaqueLines, maxAnisotropy);
+    group.add(basePlaque.group);
+  }
 
   // Interno.
   const interior = new THREE.Group();
@@ -165,7 +184,105 @@ export async function buildGlobe(materials, palette, plaqueCfg) {
   edge.renderOrder = 2;
   group.add(edge);
 
-  return { group, interior, base, pedestal, plaque, glass, edge, bed };
+  return { group, interior, base, pedestal, plaque, glass, edge, bed, basePlaque };
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Targhetta in oro sulla base: lastra curva che segue la pietra,
+//  con incisione nera in Forum disegnata su una texture nitida.
+// ─────────────────────────────────────────────────────────────
+async function loadFont(spec, timeout = 2500) {
+  if (!document.fonts || !document.fonts.load) return;
+  try {
+    await Promise.race([document.fonts.load(spec), new Promise((r) => setTimeout(r, timeout))]);
+  } catch { /* si usa il font di riserva */ }
+}
+
+async function buildBasePlaque(palette, lines, maxAnisotropy) {
+  const group = new THREE.Group();
+  group.name = 'base-plaque';
+  const y0 = -0.965, y1 = -0.785;          // fascia frontale dello sguscio
+  const H = y1 - y0;
+  const rb = baseRadiusAt(y0), rt = baseRadiusAt(y1);
+  const W = 0.76;
+  const half = W / ((rb + rt) / 2) / 2;    // semiampiezza angolare
+  const T = 0.006;                          // spessore della lastra
+
+  // texture: colore (sRGB) e dati (rugosità in G, metallo in B)
+  await loadFont('400 120px Forum');
+  const cw = 2048;
+  const ch = Math.round(cw * (H / W));
+  const colorCanvas = document.createElement('canvas');
+  const dataCanvas = document.createElement('canvas');
+  colorCanvas.width = dataCanvas.width = cw;
+  colorCanvas.height = dataCanvas.height = ch;
+  const cc = colorCanvas.getContext('2d');
+  const dc = dataCanvas.getContext('2d');
+  cc.fillStyle = '#ffffff'; cc.fillRect(0, 0, cw, ch);
+  dc.fillStyle = 'rgb(255,150,255)'; dc.fillRect(0, 0, cw, ch);   // piastra: metallo satinato
+  const ink = palette.plaqueText || '#111111';
+  const inkData = 'rgb(0,255,0)';            // lettere: nero opaco, non metallico
+  const draw = (fn) => { cc.fillStyle = cc.strokeStyle = ink; dc.fillStyle = dc.strokeStyle = inkData; fn(cc); fn(dc); };
+
+  // filetto inciso lungo il bordo
+  draw((c) => { c.lineWidth = 5; c.strokeRect(26, 22, cw - 52, ch - 44); });
+  const [first, second] = lines;
+  const fit = (text, size, maxW) => {
+    cc.font = `400 ${size}px Forum, 'Cormorant Garamond', serif`;
+    const w = cc.measureText(text).width;
+    return w > maxW ? Math.floor((size * maxW) / w) : size;
+  };
+  const s1 = fit(first, Math.round(ch * 0.4), cw * 0.86);
+  const s2 = second ? fit(second, Math.round(s1 * 0.74), cw * 0.76) : 0;
+  // Forum è sottile: un leggero contorno nello stesso colore rende l'incisione leggibile anche da lontano
+  const text = (c, str, size, y) => {
+    c.font = `400 ${size}px Forum, 'Cormorant Garamond', serif`;
+    c.lineJoin = 'round';
+    c.lineWidth = Math.max(2, size * 0.035);
+    c.strokeText(str, cw / 2, y);
+    c.fillText(str, cw / 2, y);
+  };
+  draw((c) => {
+    c.textAlign = 'center';
+    c.textBaseline = 'alphabetic';
+    text(c, first, s1, second ? ch * 0.5 : ch * 0.64);
+    if (second) {
+      if ('letterSpacing' in c) c.letterSpacing = Math.round(s2 * 0.05) + 'px';
+      text(c, second, s2, ch * 0.83);
+      if ('letterSpacing' in c) c.letterSpacing = '0px';
+    }
+  });
+
+  const colorTex = new THREE.CanvasTexture(colorCanvas);
+  colorTex.colorSpace = THREE.SRGBColorSpace;
+  colorTex.anisotropy = Math.min(8, maxAnisotropy);
+  const dataTex = new THREE.CanvasTexture(dataCanvas);
+  dataTex.colorSpace = THREE.NoColorSpace;
+  dataTex.anisotropy = Math.min(8, maxAnisotropy);
+
+  const gold = new THREE.Color(palette.gold || palette.brass);
+  const slabMat = new THREE.MeshStandardMaterial({
+    color: gold, metalness: 1, roughness: 0.3, envMapIntensity: 1.2, side: THREE.DoubleSide,
+  });
+  const faceMat = new THREE.MeshStandardMaterial({
+    color: gold, map: colorTex,
+    metalness: 1, metalnessMap: dataTex,
+    roughness: 0.62, roughnessMap: dataTex,
+    emissive: gold, emissiveMap: colorTex, emissiveIntensity: 0.14,
+    envMapIntensity: 1.15,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+
+  const slabProfile = [
+    new THREE.Vector2(rb - 0.002, y0), new THREE.Vector2(rb + T, y0),
+    new THREE.Vector2(rt + T, y1), new THREE.Vector2(rt - 0.002, y1),
+  ];
+  const slab = new THREE.Mesh(new THREE.LatheGeometry(slabProfile, 72, -half, 2 * half), slabMat);
+  const face = new THREE.Mesh(new THREE.CylinderGeometry(rt + T + 0.0005, rb + T + 0.0005, H, 96, 1, true, -half, 2 * half), faceMat);
+  face.position.y = (y0 + y1) / 2;
+  face.name = 'base-plaque-face';
+  group.add(slab, face);
+  return { group, materials: [slabMat, faceMat] };
 }
 
 // Targhetta museale in ottone con campo smaltato e lettere in rilievo.
@@ -176,7 +293,7 @@ async function buildPlaque(materials, cfg) {
   const tilt = THREE.MathUtils.degToRad(24);
 
   const plateGroup = new THREE.Group();
-  const plate = new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 3, 0.006), materials.brass);
+  const plate = new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 3, 0.006), materials.plaqueBrass);
   plate.castShadow = true;
   plate.receiveShadow = false;
   plateGroup.add(plate);
@@ -220,14 +337,14 @@ async function buildPlaque(materials, cfg) {
   group.add(plateGroup);
 
   // piedino posteriore
-  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.006), materials.brass);
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.006), materials.plaqueBrass);
   leg.position.set(0, -0.01, -0.04);
   leg.rotation.x = 0.5;
   group.add(leg);
 
   // zoccolo in ottone: solleva la targhetta sopra la neve depositata
   const FOOT_H = 0.022;
-  const foot = new THREE.Mesh(new RoundedBoxGeometry(W * 0.82, FOOT_H, 0.07, 2, 0.004), materials.brass);
+  const foot = new THREE.Mesh(new RoundedBoxGeometry(W * 0.82, FOOT_H, 0.07, 2, 0.004), materials.plaqueBrass);
   foot.castShadow = true;
   foot.receiveShadow = false;
 

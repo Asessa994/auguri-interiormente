@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Buon Natale da InteriormenteDesign</title>
   <meta name="description" content="Agita la sfera di neve e scopri il nostro augurio di Natale. Una piccola scultura per voi, da InteriormenteDesign.">
-  <meta name="theme-color" content="#EFE8DC">
+  <meta name="theme-color" content="#26211E">
 
   <!-- Anteprima per WhatsApp e social: sostituisci l'indirizzo con quello definitivo (vedi README) -->
   <meta property="og:type" content="website">
   <meta property="og:locale" content="it_IT">
   <meta property="og:site_name" content="InteriormenteDesign">
   <meta property="og:title" content="Buon Natale da InteriormenteDesign">
-  <meta property="og:description" content="Agita un po’ di meraviglia: la nostra sfera di neve vi aspetta.">
+  <meta property="og:description" content="C’è sempre spazio per un po’ di meraviglia. Agita la nostra sfera di neve.">
   <meta property="og:url" content="https://asessa994.github.io/auguri-interiormente/">
   <meta property="og:image" content="https://asessa994.github.io/auguri-interiormente/assets/og-image.jpg">
   <meta property="og:image:type" content="image/jpeg">
@@ -23,6 +23,7 @@
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
 
+  <link rel="preload" href="./assets/fonts/forum-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./assets/fonts/cormorant-garamond-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./assets/fonts/inter-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="modulepreload" href="./vendor/three/three.core.min.js">
@@ -39,6 +40,13 @@
   </script>
 </head>
 <body class="is-loading layout-stack">
+  <!-- Introduzione: frase su antracite caldo; un tocco per proseguire -->
+  <div class="intro" id="intro" tabindex="0" role="button" aria-label="Introduzione: tocca per continuare">
+    <p class="intro-text" id="intro-text"><span>C’è sempre spazio</span><span>per un po’ di meraviglia.</span></p>
+    <div class="intro-progress" aria-hidden="true"><i id="loader-fill"></i></div>
+    <p class="intro-hint" id="intro-hint">Tocca per continuare</p>
+  </div>
+
   <canvas id="scene" tabindex="0" aria-label="Sfera di neve in vetro con la testa del David. Trascina lentamente per osservarla, rapidamente per agitarla."></canvas>
 
   <div class="ui" id="ui">
@@ -67,11 +75,9 @@
     Segnaposto provvisorio · manca il modello del David <code>assets/david-head.glb</code>
   </p>
 
-  <div class="loader" id="loader" role="progressbar" aria-label="Caricamento" aria-valuemin="0" aria-valuemax="100">
-    <p class="loader-brand">Interiormente<span>Design</span></p>
-    <div class="loader-bar"><i id="loader-fill"></i></div>
-    <p class="loader-text" id="loader-text">Preparazione della sfera…</p>
-  </div>
+  <button type="button" class="sound" id="btn-music" aria-pressed="true" aria-label="Disattiva la musica" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path class="note" d="M9 18.5a2.5 2.5 0 1 1-2.5-2.5c.53 0 1 .15 1.5.4V5.2l10-2.2v12.5a2.5 2.5 0 1 1-2.5-2.5c.53 0 1 .15 1.5.4V6.3L9 7.9z"/><path class="slash" d="M3 3l18 18"/></svg>
+  </button>
 
   <div class="error" id="error" hidden>
     <div class="error-card">
@@ -104,6 +110,8 @@
       function fail(msg) {
         var e = document.getElementById('error');
         if (!e || !document.body.classList.contains('is-loading')) return;
+        var i = document.getElementById('intro');
+        if (i) i.hidden = true;
         document.getElementById('error-msg').textContent = msg;
         e.hidden = false;
         document.body.classList.remove('is-loading');

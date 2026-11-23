@@ -164,6 +164,32 @@ function applyTriplanar(material, uniforms, { scatter = false, lite = false } = 
 // Vetro "veloce" per i telefoni: nessun secondo rendering della scena.
 // Riflessi fisici dell'ambiente e delle luci + leggera attenuazione,
 // sommati in modalità premoltiplicata sopra l'interno già disegnato.
+// "Velo" per lo svelamento: il materiale sfuma verso il colore esatto dello
+// sfondo (calcolato nello spazio colore di uscita), così all'inizio gli oggetti
+// non si vedono affatto, nemmeno come sagome scure.
+export function addVeil(material, showUniform, colorUniform, lightUniform = null) {
+  const prev = material.onBeforeCompile;
+  const prevKey = material.customProgramCacheKey;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (prev) prev.call(material, shader, renderer);
+    shader.uniforms.uVeilShow = showUniform;
+    shader.uniforms.uVeilColor = colorUniform;
+    shader.uniforms.uVeilLight = lightUniform || { value: 1 };
+    // uVeilLight: "si accende" (targhette): prima in penombra, poi in piena luce.
+    // Il velo si applica in spazio lineare, prima del tone mapping: funziona sia sullo
+    // schermo sia nel passaggio di rifrazione del vetro.
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uVeilShow;\nuniform vec3 uVeilColor;\nuniform float uVeilLight;')
+      .replace('#include <tonemapping_fragment>', '\tgl_FragColor.rgb = mix( uVeilColor, gl_FragColor.rgb * mix( 0.32, 1.0, uVeilLight ), uVeilShow );\n#include <tonemapping_fragment>');
+  };
+  material.customProgramCacheKey = () => (prevKey ? prevKey.call(material) : '') + '|veil';
+  material.needsUpdate = true;
+  return material;
+}
+
+// Intensità del vetro durante lo svelamento (0 → invisibile, 1 → normale).
+export const glassReveal = { value: 1 };
+
 function createFastGlass() {
   const m = new THREE.MeshPhysicalMaterial({
     color: 0x000000,
@@ -181,12 +207,14 @@ function createFastGlass() {
   m.blendSrc = THREE.OneFactor;
   m.blendDst = THREE.OneMinusSrcAlphaFactor;
   m.onBeforeCompile = (shader) => {
+    shader.uniforms.uReveal = glassReveal;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uReveal;');
     shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', /* glsl */ `
       #include <opaque_fragment>
       {
         float gNdV = clamp( dot( normal, normalize( vViewPosition ) ), 0.0, 1.0 );
         float gF = pow( 1.0 - gNdV, 3.0 );
-        gl_FragColor = vec4( outgoingLight + vec3( 0.95, 0.94, 0.9 ) * ( 0.004 + 0.05 * gF ), 0.04 + 0.28 * gF );
+        gl_FragColor = vec4( outgoingLight + vec3( 0.95, 0.94, 0.9 ) * ( 0.004 + 0.05 * gF ) * uReveal, ( 0.04 + 0.28 * gF ) * uReveal );
       }
     `);
   };
@@ -277,6 +305,8 @@ export function createMaterials(renderer, palette, { fastGlass = false, lite = f
     roughness: 0.4,
     metalness: 0,
   });
+  // Ottone della targhetta interna (separato da quello della base per lo svelamento).
+  const plaqueBrass = brass.clone();
   // Piano della targhetta: ottone spazzolato chiaro (leggermente "illuminato"
   // perché le lettere nere si leggano anche sullo schermo piccolo del telefono).
   const plaqueFace = new THREE.MeshStandardMaterial({
@@ -323,5 +353,5 @@ export function createMaterials(renderer, palette, { fastGlass = false, lite = f
   });
 
   const ready = Promise.all(pending.splice(0));
-  return { marble, makeMarble, marbleUniforms, stone, brass, brassPolished, enamel, plaqueText, plaqueFace, snowBed, glass, ready };
+  return { marble, makeMarble, marbleUniforms, stone, brass, brassPolished, enamel, plaqueText, plaqueFace, plaqueBrass, snowBed, glass, ready };
 }
