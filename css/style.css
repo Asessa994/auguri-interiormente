@@ -160,8 +160,7 @@ body.has-shaken .invite { opacity: 0; transform: translateY(-4px); }
   margin: 0;
   opacity: 0;
   transform: translateY(6px);
-  filter: blur(3px);
-  transition: opacity 1.6s ease, transform 1.6s cubic-bezier(.22,.61,.36,1), filter 1.6s ease;
+  transition: opacity 1.6s ease, transform 1.6s cubic-bezier(.22,.61,.36,1);
 }
 .greeting .line:nth-child(2) { transition-delay: .7s; }
 .greeting .line:nth-child(3) { transition-delay: 1.4s; }
@@ -177,7 +176,7 @@ body.has-shaken .invite { opacity: 0; transform: translateY(-4px); }
   margin: 0 auto .6em;
   background: var(--brass);
 }
-.greeting.is-visible .line { opacity: 1; transform: none; filter: none; }
+.greeting.is-visible .line { opacity: 1; transform: none; }
 .nowrap { white-space: nowrap; }
 
 .controls {
@@ -192,9 +191,8 @@ body.has-shaken .invite { opacity: 0; transform: translateY(-4px); }
   pointer-events: auto;
   appearance: none;
   border: 1px solid color-mix(in srgb, var(--brass) 75%, transparent);
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  /* niente backdrop-filter: sopra una scena 3D in movimento costa molto sui telefoni */
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
   color: var(--text);
   font-family: var(--sans);
   font-weight: 500;
@@ -376,5 +374,5 @@ body:not(.is-loading) .loader { opacity: 0; visibility: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   #scene, .ui, .invite, .greeting .line { transition-duration: .4s !important; transition-delay: 0s !important; }
-  .greeting .line { transform: none; filter: none; }
+  .greeting .line { transform: none; }
 }

@@ -178,24 +178,24 @@ async function buildPlaque(materials, cfg) {
   const plateGroup = new THREE.Group();
   const plate = new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 3, 0.006), materials.brass);
   plate.castShadow = true;
-  plate.receiveShadow = true;
+  plate.receiveShadow = false;
   plateGroup.add(plate);
 
   // filetto inciso lungo il bordo
   const frame = new THREE.Mesh(new RoundedBoxGeometry(W - 0.022, H - 0.022, 0.002, 2, 0.003), materials.enamel);
   frame.position.z = D / 2 - 0.0002;
   plateGroup.add(frame);
-  const face = new THREE.Mesh(new RoundedBoxGeometry(W - 0.03, H - 0.03, 0.003, 2, 0.002), materials.brass);
+  const face = new THREE.Mesh(new RoundedBoxGeometry(W - 0.03, H - 0.03, 0.003, 2, 0.002), materials.plaqueFace);
   face.position.z = D / 2 + 0.0004;
-  face.receiveShadow = true;
+  face.receiveShadow = false;
   plateGroup.add(face);
 
   let textOk = false;
   try {
     const font = await new FontLoader().loadAsync(cfg.font);
     const tg = new TextGeometry(cfg.text, {
-      font, size: 0.05, depth: 0.0016, curveSegments: 6,
-      bevelEnabled: true, bevelThickness: 0.0004, bevelSize: 0.0003, bevelSegments: 1,
+      font, size: 0.05, depth: 0.0018, curveSegments: 6,
+      bevelEnabled: false,
     });
     tg.computeBoundingBox();
     const bb = tg.boundingBox;
@@ -204,9 +204,9 @@ async function buildPlaque(materials, cfg) {
     const s = maxW / width;
     tg.translate(-(bb.min.x + width / 2), -(bb.min.y + (bb.max.y - bb.min.y) / 2), 0);
     tg.scale(s, s, 1);
-    // lettere smaltate scure sull'ottone: massima leggibilità, come le targhe museali
-    const text = new THREE.Mesh(tg, materials.enamel);
-    text.position.set(0, 0.003, D / 2 + 0.0016);
+    // lettere nere opache sull'ottone: massima leggibilità, come le targhe museali
+    const text = new THREE.Mesh(tg, materials.plaqueText);
+    text.position.set(0, 0.003, D / 2 + 0.0014);
     text.castShadow = false;
     text.name = 'plaque-text';
     plateGroup.add(text);
@@ -229,7 +229,7 @@ async function buildPlaque(materials, cfg) {
   const FOOT_H = 0.022;
   const foot = new THREE.Mesh(new RoundedBoxGeometry(W * 0.82, FOOT_H, 0.07, 2, 0.004), materials.brass);
   foot.castShadow = true;
-  foot.receiveShadow = true;
+  foot.receiveShadow = false;
 
   // posizione davanti al supporto
   const bottomOffset = (H / 2) * Math.cos(tilt) + (D / 2) * Math.sin(tilt);

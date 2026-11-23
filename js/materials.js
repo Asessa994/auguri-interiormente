@@ -112,7 +112,11 @@ diffuseColor.rgb += uTpFleck * tpD.b * tpD.b;
 
 const TRIPLANAR_ROUGHNESS = /* glsl */ `
 #include <roughnessmap_fragment>
+#ifdef TP_LITE
+roughnessFactor = clamp( roughnessFactor + ( tpD.b - 0.5 ) * uTpRoughVar - tpD.a * uTpSparkle, 0.05, 1.0 );
+#else
 roughnessFactor = clamp( roughnessFactor + ( tpSample( uTpData, tpP * 3.0, tpWts ).b - 0.5 ) * uTpRoughVar - tpD.a * uTpSparkle, 0.05, 1.0 );
+#endif
 `;
 
 const TRIPLANAR_NORMAL = /* glsl */ `
@@ -132,7 +136,8 @@ const SCATTER_PATCH = /* glsl */ `
 	reflectedLight.directDiffuse += ( tpWrapNL - dotNL ) * uScatterAmount * uScatterColor * directLight.color * BRDF_Lambert( material.diffuseColor );
 `;
 
-function applyTriplanar(material, uniforms, { scatter = false } = {}) {
+function applyTriplanar(material, uniforms, { scatter = false, lite = false } = {}) {
+  if (lite) material.defines = { ...(material.defines || {}), TP_LITE: '' };
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, sculptSpace, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -152,11 +157,44 @@ function applyTriplanar(material, uniforms, { scatter = false } = {}) {
     }
     shader.fragmentShader = frag;
   };
-  material.customProgramCacheKey = () => 'tp-' + (scatter ? 's' : 'n') + (material.normalMap ? 'N' : '') + (material.aoMap ? 'A' : '');
+  material.customProgramCacheKey = () => 'tp-' + (scatter ? 's' : 'n') + (lite ? 'l' : 'f') + (material.normalMap ? 'N' : '') + (material.aoMap ? 'A' : '');
   return material;
 }
 
-export function createMaterials(renderer, palette) {
+// Vetro "veloce" per i telefoni: nessun secondo rendering della scena.
+// Riflessi fisici dell'ambiente e delle luci + leggera attenuazione,
+// sommati in modalità premoltiplicata sopra l'interno già disegnato.
+function createFastGlass() {
+  const m = new THREE.MeshPhysicalMaterial({
+    color: 0x000000,
+    metalness: 0,
+    roughness: 0.03,
+    ior: 1.5,
+    specularIntensity: 1,
+    envMapIntensity: 0.38,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.FrontSide,
+  });
+  m.blending = THREE.CustomBlending;
+  m.blendEquation = THREE.AddEquation;
+  m.blendSrc = THREE.OneFactor;
+  m.blendDst = THREE.OneMinusSrcAlphaFactor;
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', /* glsl */ `
+      #include <opaque_fragment>
+      {
+        float gNdV = clamp( dot( normal, normalize( vViewPosition ) ), 0.0, 1.0 );
+        float gF = pow( 1.0 - gNdV, 3.0 );
+        gl_FragColor = vec4( outgoingLight + vec3( 0.95, 0.94, 0.9 ) * ( 0.004 + 0.05 * gF ), 0.04 + 0.28 * gF );
+      }
+    `);
+  };
+  m.customProgramCacheKey = () => 'fast-glass';
+  return m;
+}
+
+export function createMaterials(renderer, palette, { fastGlass = false, lite = false } = {}) {
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
   const marbleData = dataTexture('./assets/textures/marble-data.webp', maxAniso);
   const marbleNormal = dataTexture('./assets/textures/marble-normal.webp', maxAniso);
@@ -188,13 +226,14 @@ export function createMaterials(renderer, palette) {
     roughness: 0.36,
     metalness: 0,
     specularIntensity: 0.6,
-    clearcoat: 0.18,
+    // su mobile niente strato di vernice e "sheen": costano molto e si notano poco
+    clearcoat: lite ? 0 : 0.18,
     clearcoatRoughness: 0.28,
-    sheen: 0.1,
+    sheen: lite ? 0 : 0.1,
     sheenRoughness: 0.7,
     sheenColor: new THREE.Color(1.0, 0.98, 0.95),
     envMapIntensity: 0.62,
-  }), marbleUniforms, { scatter: true });
+  }), marbleUniforms, { scatter: true, lite });
 
   const marble = makeMarble();
 
@@ -203,7 +242,7 @@ export function createMaterials(renderer, palette) {
     color: new THREE.Color(palette.stone),
     roughness: 0.5,
     metalness: 0,
-    clearcoat: 0.25,
+    clearcoat: lite ? 0 : 0.25,
     clearcoatRoughness: 0.45,
     envMapIntensity: 0.8,
   }), {
@@ -218,14 +257,13 @@ export function createMaterials(renderer, palette) {
     uTpRoughVar: { value: 0.25 },
     uTpSparkle: { value: 0.0 },
     uTpFleck: { value: 0.06 },
-  });
+  }, { lite });
 
   // Ottone champagne satinato (piastra) e lucidato (lettere).
   const brass = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color(palette.brass),
     metalness: 1,
     roughness: 0.34,
-    anisotropy: 0.4,
     envMapIntensity: 1.15,
   });
   const brassPolished = new THREE.MeshPhysicalMaterial({
@@ -234,12 +272,27 @@ export function createMaterials(renderer, palette) {
     roughness: 0.14,
     envMapIntensity: 1.3,
   });
-  const enamel = new THREE.MeshPhysicalMaterial({
+  const enamel = new THREE.MeshStandardMaterial({
     color: new THREE.Color(palette.enamel),
-    roughness: 0.38,
+    roughness: 0.4,
     metalness: 0,
-    clearcoat: 0.6,
-    clearcoatRoughness: 0.25,
+  });
+  // Piano della targhetta: ottone spazzolato chiaro (leggermente "illuminato"
+  // perché le lettere nere si leggano anche sullo schermo piccolo del telefono).
+  const plaqueFace = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette.brass),
+    metalness: 0.8,
+    roughness: 0.42,
+    emissive: new THREE.Color(palette.brass),
+    emissiveIntensity: 0.16,
+    envMapIntensity: 1.1,
+  });
+  // Lettere della targhetta: nero opaco, il massimo contrasto sull'ottone.
+  const plaqueText = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(palette.plaqueText || '#111111'),
+    roughness: 0.62,
+    metalness: 0,
+    envMapIntensity: 0.4,
   });
 
   // Neve depositata (letto fisso sul fondo).
@@ -247,14 +300,14 @@ export function createMaterials(renderer, palette) {
     color: new THREE.Color(palette.snow).multiplyScalar(0.94),
     roughness: 0.92,
     metalness: 0,
-    sheen: 0.6,
+    sheen: lite ? 0 : 0.6,
     sheenRoughness: 0.5,
     sheenColor: new THREE.Color(1, 1, 1),
     envMapIntensity: 0.7,
   });
 
   // Vetro spesso con liquido limpido: trasmissione fisica + volume.
-  const glass = new THREE.MeshPhysicalMaterial({
+  const glass = fastGlass ? createFastGlass() : new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
     metalness: 0,
     roughness: 0.015,
@@ -270,5 +323,5 @@ export function createMaterials(renderer, palette) {
   });
 
   const ready = Promise.all(pending.splice(0));
-  return { marble, makeMarble, marbleUniforms, stone, brass, brassPolished, enamel, snowBed, glass, ready };
+  return { marble, makeMarble, marbleUniforms, stone, brass, brassPolished, enamel, plaqueText, plaqueFace, snowBed, glass, ready };
 }

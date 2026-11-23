@@ -19,8 +19,8 @@ const body = document.body;
 
 // ── Qualità ──────────────────────────────────────────────────
 const TIERS = {
-  low: { dprMax: 1.5, dprMin: 0.9, particles: 1500, shadow: 1024, transmission: 0.85 },
-  medium: { dprMax: 2.0, dprMin: 1.0, particles: 2200, shadow: 1024, transmission: 1.0 },
+  low: { dprMax: 1.3, dprMin: 0.85, particles: 1500, shadow: 1024, transmission: 0.85 },
+  medium: { dprMax: 1.6, dprMin: 1.0, particles: 2200, shadow: 1024, transmission: 1.0 },
   high: { dprMax: 2.0, dprMin: 1.0, particles: 2800, shadow: 2048, transmission: 1.0 },
 };
 
@@ -141,7 +141,10 @@ async function main() {
   lights.key.shadow.mapSize.set(tier.shadow, tier.shadow);
   scene.add(createBackdrop(CONFIG.palette, lights.keyDirection));
 
-  const mats = createMaterials(renderer, CONFIG.palette);
+  // Su telefono: vetro senza secondo passaggio di rendering e marmo alleggerito.
+  const glassMode = params.get('glass') || CONFIG.glass;
+  const fastGlass = glassMode === 'fast' || (glassMode !== 'refraction' && tierName !== 'high');
+  const mats = createMaterials(renderer, CONFIG.palette, { fastGlass, lite: tierName !== 'high' });
   const globe = await buildGlobe(mats, CONFIG.palette, CONFIG.plaque);
   object.add(globe.group);
   if (params.get('debug') === 'noglass') { globe.glass.visible = false; globe.edge.visible = false; }
@@ -180,7 +183,7 @@ async function main() {
     sim.setColliders({ slices, plaque: globe.plaque.collider });
   };
   buildColliders();
-  const snow = createSnowPoints(sim, CONFIG.palette);
+  const snow = createSnowPoints(sim, CONFIG.palette, { softEdges: fastGlass });
   globe.interior.add(snow);
   const posAttr = snow.geometry.attributes.position;
 
@@ -378,6 +381,7 @@ async function main() {
   let running = true;
   let frameTimes = [];
   let goodWindows = 0;
+  let renderedFrames = 0;
   let qualityClock = 0;
   const startedAt = performance.now();
 
@@ -390,15 +394,15 @@ async function main() {
     if (!rendered) { frameTimes.length = 0; return; }
     frameTimes.push(dt);
     qualityClock += dt;
-    if (qualityClock < 1.5) return;
+    if (qualityClock < 1.0) return;
     const avg = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
     frameTimes.length = 0;
     qualityClock = 0;
     const early = performance.now() - startedAt < 3500;
-    if (avg > 0.027) {
+    if (avg > 0.024) {
       goodWindows = 0;
       if (dpr > tier.dprMin + 0.01) {
-        dpr = Math.max(tier.dprMin, dpr - 0.15);
+        dpr = Math.max(tier.dprMin, dpr - 0.2);
         applyLayout();
       }
       // il numero di fiocchi si riduce solo durante l'ingresso, mai a scena avviata
@@ -456,7 +460,10 @@ async function main() {
       if (Math.abs(wob.x) + Math.abs(wob.z) + Math.abs(wob.wx) + Math.abs(wob.wz) < 1e-5) wob.x = wob.z = wob.wx = wob.wz = 0;
       pivot.rotation.set(wob.x, 0, wob.z);
       pivot.position.set(wob.gx, DIM.GROUND_Y + wob.gy, 0);
-      renderer.shadowMap.needsUpdate = true;
+      // la luce principale si muove con l'oggetto: la mappa d'ombra resta valida,
+      // basta aggiornarne la matrice (niente nuovo rendering delle ombre a ogni fotogramma)
+      pivot.updateMatrixWorld(true);
+      lights.key.shadow.updateMatrices(lights.key);
       needsRender = true;
     }
 
@@ -491,6 +498,7 @@ async function main() {
       renderer.render(scene, camera);
       needsRender = false;
       rendered = true;
+      renderedFrames++;
     }
     adaptQuality(dt, rendered);
   }
@@ -529,7 +537,7 @@ async function main() {
   }
 
   // per le verifiche automatiche
-  window.__sfera = { sim, view, motion, shakeButton, shakeScreen, renderer, scene, camera, get greetingShown() { return greetingShown; }, tier: tierName, get dpr() { return dpr; }, placeholder: !dv.ok };
+  window.__sfera = { sim, view, motion, shakeButton, shakeScreen, renderer, scene, camera, get greetingShown() { return greetingShown; }, tier: tierName, fastGlass, get dpr() { return dpr; }, get frames() { return renderedFrames; }, placeholder: !dv.ok };
 }
 
 main().catch((err) => {

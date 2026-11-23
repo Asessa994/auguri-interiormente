@@ -136,8 +136,16 @@ export class SnowSimulation {
     if (mag < 1e-4) return;
     if (mag > 2.2) { const k = 2.2 / mag; dx *= k; dy *= k; dz *= k; mag = 2.2; }
     const rm = this.reducedMotion ? 0.7 : 1;
-    // il liquido resta indietro rispetto al vetro
+    // il liquido resta indietro rispetto al vetro…
     this.U.x -= dx * 0.85 * rm; this.U.y -= dy * 0.85 * rm; this.U.z -= dz * 0.85 * rm;
+    // …e così i fiocchi già sospesi: reagiscono nello stesso istante, senza ritardo
+    const kx = dx * 0.7 * rm, ky = dy * 0.7 * rm, kz = dz * 0.7 * rm;
+    const v = this.vel;
+    for (let i = 0; i < this.active; i++) {
+      if (this.rest[i]) continue;
+      const o = i * 3;
+      v[o] -= kx; v[o + 1] -= ky; v[o + 2] -= kz;
+    }
     const ul = this.U.length();
     if (ul > 2.4) this.U.multiplyScalar(2.4 / ul);
     this.E = Math.min(2.6, this.E + mag * 0.75 * rm);
@@ -453,7 +461,7 @@ export class SnowSimulation {
 //  davanti e dietro la scultura. Il campionamento filtrato della
 //  trasmissione ne ammorbidisce i bordi.
 // ─────────────────────────────────────────────────────────────
-export function createSnowPoints(sim, palette) {
+export function createSnowPoints(sim, palette, { softEdges = false } = {}) {
   const geo = new THREE.BufferGeometry();
   const posAttr = new THREE.BufferAttribute(sim.pos, 3);
   posAttr.setUsage(THREE.DynamicDrawUsage);
@@ -510,7 +518,11 @@ export function createSnowPoints(sim, palette) {
       void main() {
         vec2 c = gl_PointCoord * 2.0 - 1.0;
         float r2 = dot( c, c );
-        if ( r2 > 0.86 ) discard;
+        #if SOFT_EDGES == 1
+          if ( r2 > 1.0 ) discard;
+        #else
+          if ( r2 > 0.86 ) discard;
+        #endif
         // fiocco piatto e opaco: leggera luce dal lato della lampada, nessun bordo scuro
         float side = clamp( dot( c * vec2( 1.0, -1.0 ), normalize( uLightDir.xy + 1e-4 ) ) * 0.5 + 0.5, 0.0, 1.0 );
         // lato in luce più chiaro, lato in ombra appena grigio: il fiocco si stacca dal fondo chiaro
@@ -518,7 +530,11 @@ export function createSnowPoints(sim, palette) {
         float glint = pow( max( 0.0, sin( uTime * ( 1.1 + vSeed * 2.6 ) + vSeed * 61.0 ) ), 36.0 ) * vSpark;
         col += glint * 0.5 * ( 1.0 - vFloor );
         col *= 1.0 - 0.1 * vFloor;   // i fiocchi depositati si fondono con il letto di neve
-        float a = 1.0;
+        #if SOFT_EDGES == 1
+          float a = 1.0 - smoothstep( 0.55, 1.0, r2 );
+        #else
+          float a = 1.0;
+        #endif
         gl_FragColor = vec4( col, a );
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -526,6 +542,9 @@ export function createSnowPoints(sim, palette) {
     `,
     transparent: false,
     depthWrite: true,
+    // senza rifrazione (vetro veloce) i bordi si ammorbidiscono con l'antialiasing
+    alphaToCoverage: softEdges,
+    defines: { SOFT_EDGES: softEdges ? 1 : 0 },
   });
 
   const points = new THREE.Points(geo, material);

@@ -12,7 +12,8 @@ export const CONFIG = {
     marbleVein: '#8F8A82',     // venature (molto attenuate)
     stone: '#2B2A28',          // pietra antracite della base
     brass: '#CDB27C',          // ottone champagne
-    enamel: '#262523',         // fondo smaltato della targhetta
+    enamel: '#262523',         // filetto smaltato della targhetta
+    plaqueText: '#111111',     // colore delle lettere della targhetta
     snow: '#FFFFFF',
     text: '#2B2A28',
     textSoft: '#6E665C',
@@ -47,6 +48,10 @@ export const CONFIG = {
 
   // 'auto' | 'low' | 'medium' | 'high'  (puoi forzarlo anche con ?quality=low nell'indirizzo)
   quality: 'auto',
+
+  // Vetro: 'auto' = rifrazione vera su computer, vetro "veloce" su telefono
+  //        'refraction' | 'fast' per forzarlo (anche con ?glass=fast)
+  glass: 'auto',
 
   motion: {
     gain: 1.35,         // quanto il movimento del telefono smuove il liquido
