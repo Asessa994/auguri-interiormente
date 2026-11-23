@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Buon Natale da InteriormenteDesign</title>
+  <meta name="description" content="Agita la sfera di neve e scopri il nostro augurio di Natale. Una piccola scultura per voi, da InteriormenteDesign.">
+  <meta name="theme-color" content="#EFE8DC">
+
+  <!-- Anteprima per WhatsApp e social: sostituisci l'indirizzo con quello definitivo (vedi README) -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="it_IT">
+  <meta property="og:site_name" content="InteriormenteDesign">
+  <meta property="og:title" content="Buon Natale da InteriormenteDesign">
+  <meta property="og:description" content="Agita un po’ di meraviglia: la nostra sfera di neve vi aspetta.">
+  <meta property="og:url" content="https://asessa994.github.io/auguri-interiormente/">
+  <meta property="og:image" content="https://asessa994.github.io/auguri-interiormente/assets/og-image.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Sfera di neve in vetro con la testa del David in marmo su base antracite e ottone">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
+
+  <link rel="preload" href="./assets/fonts/cormorant-garamond-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./assets/fonts/inter-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="modulepreload" href="./vendor/three/three.core.min.js">
+  <link rel="modulepreload" href="./vendor/three/three.module.min.js">
+  <link rel="stylesheet" href="./css/style.css">
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body class="is-loading layout-stack">
+  <canvas id="scene" tabindex="0" aria-label="Sfera di neve in vetro con la testa del David. Trascina lentamente per osservarla, rapidamente per agitarla."></canvas>
+
+  <div class="ui" id="ui">
+    <header class="ui-head">
+      <p class="brand">Interiormente<span>Design</span></p>
+      <p class="invite" id="invite">Agita un po’ di meraviglia</p>
+    </header>
+
+    <section class="ui-foot">
+      <div class="greeting" id="greeting" aria-live="polite" aria-hidden="true">
+        <p class="line">Ogni spazio custodisce una storia.</p>
+        <p class="line">Grazie per averci affidato la vostra.</p>
+        <p class="line sign">Buon Natale da <span class="nowrap">InteriormenteDesign</span>.</p>
+      </div>
+      <div class="controls">
+        <button type="button" class="btn" id="btn-shake">Agita la sfera</button>
+        <button type="button" class="btn btn-ghost" id="btn-motion" hidden>Attiva il movimento</button>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+  </div>
+
+  <p class="placeholder-badge" id="placeholder-badge" hidden>
+    Segnaposto provvisorio · manca il modello del David <code>assets/david-head.glb</code>
+  </p>
+
+  <div class="loader" id="loader" role="progressbar" aria-label="Caricamento" aria-valuemin="0" aria-valuemax="100">
+    <p class="loader-brand">Interiormente<span>Design</span></p>
+    <div class="loader-bar"><i id="loader-fill"></i></div>
+    <p class="loader-text" id="loader-text">Preparazione della sfera…</p>
+  </div>
+
+  <div class="error" id="error" hidden>
+    <div class="error-card">
+      <p class="brand">Interiormente<span>Design</span></p>
+      <p class="error-title">La sfera non può essere mostrata su questo dispositivo.</p>
+      <p class="error-msg" id="error-msg"></p>
+      <div class="error-greeting">
+        <p>Ogni spazio custodisce una storia.</p>
+        <p>Grazie per averci affidato la vostra.</p>
+        <p>Buon Natale da InteriormenteDesign.</p>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <div class="error"><div class="error-card">
+      <p class="brand">Interiormente<span>Design</span></p>
+      <p class="error-title">Per vedere la sfera di neve attiva JavaScript.</p>
+      <div class="error-greeting">
+        <p>Ogni spazio custodisce una storia.</p>
+        <p>Grazie per averci affidato la vostra.</p>
+        <p>Buon Natale da InteriormenteDesign.</p>
+      </div>
+    </div></div>
+  </noscript>
+
+  <script>
+    // Browser troppo vecchi (senza import map) o caricamento bloccato: messaggio chiaro invece di un'attesa infinita.
+    (function () {
+      function fail(msg) {
+        var e = document.getElementById('error');
+        if (!e || !document.body.classList.contains('is-loading')) return;
+        document.getElementById('error-msg').textContent = msg;
+        e.hidden = false;
+        document.body.classList.remove('is-loading');
+      }
+      var supported = window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('importmap');
+      if (!supported) fail('Questo browser è troppo datato per la scena 3D. Prova ad aggiornarlo o ad aprire il link con Safari o Chrome.');
+      window.__loadTimeout = setTimeout(function () {
+        fail('Il caricamento sta impiegando troppo tempo. Controlla la connessione e ricarica la pagina.');
+      }, 90000);
+    })();
+  </script>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
