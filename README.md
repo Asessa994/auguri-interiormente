@@ -10,6 +10,13 @@ Il progetto è statico (HTML, CSS, JavaScript, Three.js incluso): non serve ness
 
 Nella sfera ci sono due colonne ioniche (`assets/ionic-column.glb`, ottimizzato: 270 KB invece di 980, texture a 1024 px) usate due volte, con al centro una lapide in marmo con l'iscrizione «Interiormente / Design» generata dalla pagina (testo, misure e colore delle lettere in `centralPlaque` di `js/config.js`). Misure e distanza delle colonne sono in `columns`.
 
+### Decorazioni e sorpresa
+
+- **Lucine**: un filo a spirale attorno a ciascuna colonna con lampadine colorate che si accendono e si spengono a onde morbide (sfasate tra le due colonne). Colori, numero di giri e di lampadine in `decor.lights` di `js/config.js`; con *riduci movimento* restano accese con un respiro lentissimo.
+- **Alberello** dietro la lapide (con puntale e palline) e **sei pacchi regalo** sul fondo. I pacchi sono oggetti fisici leggeri: con un'agitazione vengono trascinati dalla corrente, rotolano, urtano colonne, lapide, vetro e tra loro, poi si posano di nuovo su una faccia.
+- **Sorpresa**: se l'agitazione continua per più di 5 secondi (`decor.easterEgg.seconds`) colonne, lapide e alberello si staccano dal fondo e fluttuano nel liquido insieme alla neve; quando tutto si calma tornano lentamente al loro posto e la neve riprende a posarsi su di loro. Per provarla subito: `?egg`.
+- Ogni elemento si può spegnere con `enabled: false` nella sua voce di `decor`.
+
 Per tornare alla testa del David basta scrivere `scene: 'david'` in `js/config.js` (o provare con `?scena=david`): il file è ancora in `assets/`.
 
 ### Il modello del David
@@ -63,7 +70,7 @@ Poi apri `http://localhost:8080`. I sensori del telefono richiedono HTTPS: per p
 3. *Settings → Pages → Build and deployment*: *Deploy from a branch*, ramo `main`, cartella `/ (root)`.
 4. Dopo un minuto il sito è su **https://asessa994.github.io/auguri-interiormente/**.
 
-**Aggiornamenti:** GitHub Pages fa tenere ai telefoni una copia dei file per circa 10 minuti. Per non mescolare file vecchi e nuovi, ogni volta che modifichi qualcosa in `js/` o `css/` apri `index.html` e sostituisci ovunque `v=7` con `v=8` (poi `v=9`, e così via).
+**Aggiornamenti:** GitHub Pages fa tenere ai telefoni una copia dei file per circa 10 minuti. Per non mescolare file vecchi e nuovi, ogni volta che modifichi qualcosa in `js/` o `css/` apri `index.html` e sostituisci ovunque `v=8` con `v=9` (poi `v=10`, e così via).
 
 Se usi un altro nome di repository o un dominio tuo, sostituisci l'indirizzo nelle righe `og:url` e `og:image` di `index.html`.
 
@@ -97,11 +104,12 @@ Tutto in **`js/config.js`**:
 - `plaque.text`: la scritta della targhetta; `palette.plaqueText`: colore delle lettere (nero di base);
 - `glass`: `'auto'` (rifrazione vera su computer, vetro veloce su telefono), oppure `'refraction'` / `'fast'`;
 - `credit`: riga di crediti in basso (serve se usi un modello con licenza CC BY);
+- `decor`: lucine (colori, giri, lampadine), alberello (posizione, altezza), pacchi, sorpresa (secondi di agitazione, messaggio);
 - `david`: file, rotazione, altezza, posizione;
 - `quality`: `'auto'` oppure `'low' | 'medium' | 'high'`;
 - `motion.gain` / `drag.gain`: sensibilità di telefono e trascinamento.
 
-Parametri utili nell'indirizzo: `?tune`, `?capture`, `?skipintro` (salta la frase iniziale), `?quality=low`, `?glass=fast`, `?rot=0,50,0` (prova una rotazione del David), `?debug=noglass` (nasconde il vetro per controllare il marmo), `?model=percorso/altro.glb`, `?motion` (mostra il pulsante sensori anche su computer).
+Parametri utili nell'indirizzo: `?tune`, `?capture`, `?skipintro` (salta la frase iniziale), `?quality=low`, `?glass=fast`, `?rot=0,50,0` (prova una rotazione del David), `?debug=noglass` (nasconde il vetro per controllare il marmo), `?model=percorso/altro.glb`, `?motion` (mostra il pulsante sensori anche su computer), `?egg` (fa partire subito la sorpresa).
 
 ---
 
@@ -131,12 +139,14 @@ Parametri utili nell'indirizzo: `?tune`, `?capture`, `?skipintro` (salta la fras
 - comparsa dell'augurio dopo la prima agitazione, senza coprire la sfera; messaggio d'errore se manca WebGL;
 - caricamento di un GLB compresso con lo script, pannello `?tune`, generazione dell'anteprima con `?capture`;
 - pausa completa della simulazione con la pagina nascosta e ripresa senza salti; *riduci movimento* (nessuna oscillazione dell'oggetto).
+- lucine visibili sia con il vetro a rifrazione (computer) sia con quello veloce (telefono); pacchi che si sollevano con la neve e si riposano dritti su una faccia; sorpresa che parte dopo 5 s di agitazione continua (misurati anche con il telefono che va a scatti), sculture che fluttuano senza uscire dal vetro, ritorno esatto alla posizione di partenza e collisioni della neve ripristinate.
 
 **Da verificare su un telefono reale** (non simulabili qui):
 
 - sensazione dell'agitazione con i sensori veri su iPhone (Safari) e Android (Chrome): eventualmente regola `motion.gain`;
 - fluidità effettiva e temperatura del telefono dopo un minuto;
-- anteprima del link su WhatsApp dopo la pubblicazione.
+- anteprima del link su WhatsApp dopo la pubblicazione;
+- quanto è facile far partire la sorpresa agitando davvero il telefono (eventualmente cambia `decor.easterEgg.seconds`).
 
 ---
 

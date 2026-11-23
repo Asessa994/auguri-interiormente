@@ -181,12 +181,24 @@ export function buildSliceCollider(objects, spaceInverse, { slices = 64, shrink 
   }
   const cx = new Float32Array(n + 1), cz = new Float32Array(n + 1);
   const rx = new Float32Array(n + 1), rz = new Float32Array(n + 1);
+  const filled = [];
   for (let k = 0; k <= n; k++) {
     if (minX[k] === Infinity) continue; // sezione vuota: niente collisione
     cx[k] = (minX[k] + maxX[k]) / 2;
     cz[k] = (minZ[k] + maxZ[k]) / 2;
     rx[k] = ((maxX[k] - minX[k]) / 2) * shrink;
     rz[k] = ((maxZ[k] - minZ[k]) / 2) * shrink;
+    filled.push(k);
+  }
+  // superfici lunghe senza vertici intermedi (es. il fusto di una colonna):
+  // le sezioni vuote tra due sezioni piene vengono interpolate
+  for (let i = 0; i < filled.length - 1; i++) {
+    const a = filled[i], b = filled[i + 1];
+    for (let k = a + 1; k < b; k++) {
+      const t = (k - a) / (b - a);
+      cx[k] = cx[a] + (cx[b] - cx[a]) * t; cz[k] = cz[a] + (cz[b] - cz[a]) * t;
+      rx[k] = rx[a] + (rx[b] - rx[a]) * t; rz[k] = rz[a] + (rz[b] - rz[a]) * t;
+    }
   }
   // cerchio che contiene tutta la scultura (per scartare in fretta i fiocchi lontani)
   let bx = 0, bz = 0, cnt = 0, br = 0;

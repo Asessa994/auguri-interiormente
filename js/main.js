@@ -14,6 +14,8 @@ import { fitCamera, placeCamera, CAMERA_FOV, DEFAULT_EL, TARGET } from './framin
 import { Intro } from './intro.js';
 import { Music } from './music.js';
 import { inverseNeutral } from './tonemap.js';
+import { createColumnLights, createTree, createGifts } from './decor.js';
+import { Floaters } from './bodies.js';
 
 const params = new URLSearchParams(location.search);
 const $ = (id) => document.getElementById(id);
@@ -248,12 +250,22 @@ async function main() {
     fineTurbulence: tierName === 'high',
     maxVortices: tierName === 'high' ? 7 : 5,
   });
+  // Decorazioni natalizie (versione con le colonne)
+  const decorCfg = CONFIG.decor || {};
+  const tree = useColumns && decorCfg.tree?.enabled ? createTree(decorCfg.tree) : null;
+  if (tree) globe.interior.add(tree.group);
+  const gifts = useColumns && decorCfg.gifts?.enabled ? createGifts(decorCfg.gifts) : [];
+  for (const g of gifts) globe.interior.add(g.group);
+
+  let columnSlices = [];
   const buildColliders = () => {
     globe.interior.updateWorldMatrix(true, true);
     const inv = globe.interior.matrixWorld.clone().invert();
     const sliceSets = useColumns
       ? sculptures.map((s) => buildSliceCollider([s], inv))
       : [buildSliceCollider([globe.pedestal, davidRoot], inv)];
+    if (useColumns) columnSlices = sliceSets.slice();
+    if (tree) sliceSets.push(buildSliceCollider([tree.group], inv, { slices: 32 }));
     const boxes = [...(globe.plaque ? [globe.plaque.collider] : []), ...(globe.marblePlaque?.colliders || [])];
     sim.setColliders({ sliceSets, boxes });
   };
@@ -261,6 +273,34 @@ async function main() {
   const snow = createSnowPoints(sim, CONFIG.palette, { softEdges: fastGlass });
   globe.interior.add(snow);
   const posAttr = snow.geometry.attributes.position;
+
+  // velo dello svelamento (condiviso anche dalle lucine)
+  const litShow = { value: 1 }, plaqueShow = { value: 1 };
+  const lights_ = (useColumns && decorCfg.lights?.enabled)
+    ? sculptures.map((col, i) => createColumnLights(col, columnSlices[i], decorCfg.lights, {
+      scaleUniform: snow.material.uniforms.uScale, showUniform: litShow, seed: i + 3,
+    }))
+    : [];
+
+  // Pacchi che si muovono con la neve e, per sorpresa, sculture che si staccano dal fondo
+  const cc = CONFIG.columns;
+  const obstacles = [];
+  if (useColumns) {
+    for (const s of [-1, 1]) obstacles.push({ x: s * cc.spacing, z: cc.z ?? 0, r: 0.12, yTop: 1 });
+    if (tree) obstacles.push({ x: tree.group.position.x, z: tree.group.position.z, r: 0.17, yTop: 0 });
+    for (const c of globe.marblePlaque?.colliders || []) obstacles.push({ cx: c.center.x, cz: c.center.z, hx: c.half.x, hz: c.half.z, yTop: c.center.y + c.half.y });
+  }
+  const eggBodies = [];
+  if (useColumns && decorCfg.easterEgg?.enabled) {
+    sculptures.forEach((s) => eggBodies.push({ obj: s, core: 0.11, mass: 1.4 }));
+    if (globe.marblePlaque) eggBodies.push({ obj: globe.marblePlaque.group, core: 0.13, mass: 1.0 });
+    if (tree) eggBodies.push({ obj: tree.group, core: 0.14, mass: 0.8 });
+  }
+  const floaters = new Floaters({ sim, gifts, eggBodies, obstacles, reduced: reducedMotion });
+  floaters.onSettled = () => {
+    buildColliders();                       // la neve torna a urtare le sculture al loro posto
+    renderer.shadowMap.needsUpdate = true;
+  };
 
   // Camera e impaginazione
   // Svelamento: prima il riflesso del vetro, poi il David illuminato, infine le targhette.
@@ -330,6 +370,10 @@ async function main() {
   const basis = { r: new THREE.Vector3(), u: new THREE.Vector3(), b: new THREE.Vector3() };
 
   let firstShakeAt = 0;
+  let lastShakeAt = 0;
+  let shakeHold = 0;
+  let lastLightFrame = 0;
+  const lightIdleMs = tierName === 'high' ? 33 : 50;
   let peakSpeed = 0;
   let greetingShown = false;
 
@@ -352,6 +396,7 @@ async function main() {
     const wy = basis.r.y * sx + basis.u.y * sy + basis.b.y * sz;
     const wz = basis.r.z * sx + basis.u.z * sy + basis.b.z * sz;
     sim.shake(wx, wy, wz);
+    if (Math.hypot(wx, wy, wz) > 0.01) lastShakeAt = performance.now();
     if (!reducedMotion) {
       wob.wz += -wx * 0.32 * wobbleGain;
       wob.wx += wz * 0.32 * wobbleGain;
@@ -470,13 +515,14 @@ async function main() {
     return m;
   };
   const litMats = new Set([mats.marble, mats.stone, mats.brass, mats.snowBed]);
-  davidRoot.traverse((o) => { if (o.isMesh) litMats.add(o.material); });
+  for (const root of [davidRoot, tree?.group, ...gifts.map((g) => g.group)]) {
+    root?.traverse((o) => { if (o.isMesh) litMats.add(o.material); });
+  }
   const plaqueMats = new Set([mats.plaqueBrass, mats.plaqueFace, mats.plaqueText, mats.enamel, ...(globe.basePlaque?.materials || []), ...(globe.marblePlaque?.materials || [])]);
   [...litMats, ...plaqueMats, mats.glass].forEach(remember);
   // velo verso il colore dello sfondo: gli oggetti emergono dal buio, non come sagome nere
   const bgLin = inverseNeutral(new THREE.Color(CONFIG.palette.background));
   const veilColor = { value: new THREE.Vector3(bgLin.r, bgLin.g, bgLin.b) };
-  const litShow = { value: 1 }, plaqueShow = { value: 1 };
   for (const m of litMats) addVeil(m, litShow, veilColor);
   for (const m of plaqueMats) addVeil(m, litShow, veilColor, plaqueShow);
   const lightBase = { key: lights.key.intensity, fill: lights.fill.intensity, rim: lights.rim.intensity };
@@ -555,7 +601,8 @@ async function main() {
   function frame(now) {
     if (!running) return;
     requestAnimationFrame(frame);
-    const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+    const frameMs = Math.max(0, now - last);
+    const dt = Math.min(0.1, frameMs / 1000);
     last = now;
 
     // svelamento: riflesso del vetro → David illuminato → targhette; camera quasi ferma
@@ -636,6 +683,30 @@ async function main() {
       needsRender = true;
     }
 
+    // sorpresa: agitazione continua per più di N secondi → tutto si stacca dal fondo
+    // (il tempo si misura sull'orologio, non sui fotogrammi: vale anche se il telefono va a scatti;
+    //  una pausa breve tra un colpo e l'altro non azzera il conteggio)
+    const shakeGap = now - lastShakeAt;
+    if (shakeGap < 350 + frameMs * 1.5 && sim.E > 0.8) shakeHold += dt;
+    else if (shakeGap > 900) shakeHold = Math.max(0, shakeHold - dt * 2);
+    if (decorCfg.easterEgg?.enabled && shakeHold > (decorCfg.easterEgg.seconds ?? 5) && floaters.trigger()) {
+      shakeHold = 0;
+      sim.setColliders({ sliceSets: [], boxes: [] });   // le sculture si muovono: niente collisioni fisse
+      setStatus(decorCfg.easterEgg.message || 'Hai agitato così tanto che si è staccato tutto…', 5000);
+    }
+    // pacchi e sculture in movimento
+    if (floaters.update(dt, now - lastShakeAt < 600)) {
+      needsRender = true;
+      renderer.shadowMap.needsUpdate = true;
+    }
+
+    // lucine: animate sempre, ma a 30 (telefono: 20) fotogrammi al secondo quando il resto è fermo
+    if (lights_.length && (needsRender || now - lastLightFrame > lightIdleMs)) {
+      for (const l of lights_) l.update(now / 1000, reducedMotion);
+      lastLightFrame = now;
+      needsRender = true;
+    }
+
     // augurio: compare mentre la neve rallenta dopo la prima agitazione
     if (firstShakeAt && !greetingShown) {
       peakSpeed = Math.max(peakSpeed, sim.meanSpeed);
@@ -703,7 +774,11 @@ async function main() {
   }
 
   // per le verifiche automatiche
-  window.__sfera = { sim, view, motion, shakeButton, shakeScreen, renderer, scene, camera, get greetingShown() { return greetingShown; }, tier: tierName, fastGlass, music, reveal, get dpr() { return dpr; }, get frames() { return renderedFrames; }, placeholder: !dv.ok };
+  window.__sfera = { sim, view, motion, shakeButton, shakeScreen, renderer, scene, camera, get greetingShown() { return greetingShown; }, tier: tierName, fastGlass, music, reveal, get dpr() { return dpr; }, get frames() { return renderedFrames; }, get shakeHold() { return shakeHold; }, placeholder: !dv.ok, floaters, triggerEgg: () => { if (floaters.trigger()) sim.setColliders({ sliceSets: [], boxes: [] }); } };
+  if (params.has('egg')) {
+    await new Promise((r) => { const c = () => (reveal.done ? r() : setTimeout(c, 100)); c(); });
+    setTimeout(() => window.__sfera.triggerEgg(), 1200);
+  }
 }
 
 main().catch((err) => {

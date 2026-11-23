@@ -76,6 +76,20 @@ export const CONFIG = {
     ink: '#3A3530',            // colore delle lettere incise
   },
 
+  // Decorazioni natalizie (solo con le colonne)
+  decor: {
+    lights: {
+      enabled: true,
+      colors: ['#FF5A4F', '#FFC14D', '#5ED08A', '#5B9BFF', '#FFF1D6'],   // rosso, ambra, verde, blu, bianco caldo
+      turns: 3.5,              // giri del filo attorno a ogni colonna
+      bulbsPerColumn: 26,
+    },
+    tree: { enabled: true, x: 0, z: -0.27, height: 0.78 },
+    gifts: { enabled: true },
+    // Sorpresa: agitando a lungo, tutto si stacca dal fondo e poi torna al suo posto
+    easterEgg: { enabled: true, seconds: 5, message: 'Hai agitato così tanto che si è staccato tutto…' },
+  },
+
   // Modello 3D della testa del David (usato con scene: 'david').
   david: {
     url: './assets/david-head.glb',
