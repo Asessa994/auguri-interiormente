@@ -19,9 +19,9 @@ const body = document.body;
 
 // ── Qualità ──────────────────────────────────────────────────
 const TIERS = {
-  low: { dprMax: 1.5, dprMin: 0.9, particles: 1100, shadow: 1024, transmission: 0.85 },
-  medium: { dprMax: 2.0, dprMin: 1.0, particles: 1800, shadow: 1024, transmission: 1.0 },
-  high: { dprMax: 2.0, dprMin: 1.0, particles: 2600, shadow: 2048, transmission: 1.0 },
+  low: { dprMax: 1.5, dprMin: 0.9, particles: 1500, shadow: 1024, transmission: 0.85 },
+  medium: { dprMax: 2.0, dprMin: 1.0, particles: 2200, shadow: 1024, transmission: 1.0 },
+  high: { dprMax: 2.0, dprMin: 1.0, particles: 2800, shadow: 2048, transmission: 1.0 },
 };
 
 function detectTier() {
@@ -93,6 +93,7 @@ function showError(message) {
 async function main() {
   applyPalette(CONFIG.palette);
   fillGreeting(CONFIG.greeting);
+  if (CONFIG.credit) { $('credit').textContent = CONFIG.credit; $('credit').hidden = false; }
 
   const reducedMQ = matchMedia('(prefers-reduced-motion: reduce)');
   let reducedMotion = reducedMQ.matches;
@@ -228,6 +229,8 @@ async function main() {
     body.classList.toggle('layout-stack', lay.mode === 'stack');
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     snow.material.uniforms.uScale.value = (vh * dpr) / (2 * tanHalf);
+    snow.material.uniforms.uDpr.value = dpr;
+    snow.material.uniforms.uSizeBoost.value = THREE.MathUtils.clamp(250 / Math.max(1, view.radiusPx), 1, 1.7);
     updateCamera(introEaseNow);
     needsRender = true;
   }

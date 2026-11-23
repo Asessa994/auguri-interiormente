@@ -56,6 +56,7 @@ export class SnowSimulation {
     this.pendingDir = new THREE.Vector3();
     this.time = 0;
     this._u = new Float32Array(3);
+    this._stir = 0;
 
     this.slices = null;
     this.plaque = null;
@@ -94,8 +95,8 @@ export class SnowSimulation {
       this.size[i] = d;
       this.rad[i] = d * 0.5;
       this.sink[i] = 0.042 + 0.055 * k + R() * 0.018; // velocità limite (raggi/s)
-      this.tau[i] = 0.1 + 0.24 * k + R() * 0.05;     // inerzia
-      this.lift[i] = 0.09 + 0.24 * R();               // velocità del liquido per risollevarlo
+      this.tau[i] = 0.06 + 0.16 * k + R() * 0.04;    // inerzia (breve: la neve risponde subito)
+      this.lift[i] = 0.05 + 0.18 * R();               // velocità del liquido per risollevarlo
       this.restH[i] = R() * 0.011;
       this.phase[i] = R() * Math.PI * 2;
       this.freq[i] = 0.6 + R() * 1.6;
@@ -139,10 +140,10 @@ export class SnowSimulation {
     this.U.x -= dx * 0.85 * rm; this.U.y -= dy * 0.85 * rm; this.U.z -= dz * 0.85 * rm;
     const ul = this.U.length();
     if (ul > 2.4) this.U.multiplyScalar(2.4 / ul);
-    this.E = Math.min(2.6, this.E + mag * 0.55 * rm);
+    this.E = Math.min(2.6, this.E + mag * 0.75 * rm);
     this.pending += mag;
     this.pendingDir.x += dx; this.pendingDir.y += dy; this.pendingDir.z += dz;
-    if (this.pending > 0.3) this._spawnVortex();
+    if (this.pending > 0.2) this._spawnVortex();
     this.asleep = false;
     this.shakeCount++;
   }
@@ -199,8 +200,11 @@ export class SnowSimulation {
       uy += f * (az * px - ax * pz);
       uz += f * (ax * py - ay * px);
     }
+    // sollevamento: il liquido agitato "rimescola" il fondo e solleva la neve depositata
+    const fh = y - DIM.FLOOR_Y;
+    if (fh < 0.55 && this._stir > 0.01) uy += this._stir * Math.exp(-fh / 0.2);
     // turbolenza a divergenza nulla (flusso ABC), due ottave
-    const amp = this.E * 0.3 + 0.0045;
+    const amp = this.E * 0.34 + 0.0045;
     const ph = t * 0.45;
     const k1 = 3.3;
     ux += amp * 0.5 * (Math.sin(k1 * z + ph) + Math.cos(k1 * y - 0.7 * ph));
@@ -222,8 +226,7 @@ export class SnowSimulation {
         ux -= nx * un * w; uy -= ny * un * w; uz -= nz * un * w;
       }
     }
-    const fy = y - DIM.FLOOR_Y;
-    if (fy < 0.1 && uy < 0) uy *= Math.max(0, fy / 0.1);
+    if (fh < 0.1 && uy < 0) uy *= Math.max(0, fh / 0.1);
     const o = this._u;
     o[0] = ux; o[1] = uy; o[2] = uz;
     return o;
@@ -359,6 +362,7 @@ export class SnowSimulation {
 
   _stepFluid(h) {
     this.U.multiplyScalar(Math.exp(-h / 0.55));
+    this._stir = (this.E * 0.42 + this.U.length() * 0.55) * (this.reducedMotion ? 0.8 : 1);
     this.E *= Math.exp(-h / 2.4);
     if (this.E < 0.002) this.E = 0;
     const kv = Math.exp(-h / 2.2);
@@ -433,9 +437,9 @@ export class SnowSimulation {
       if (s2 > l * l) {
         const s = Math.sqrt(s2);
         this.rest[i] = 0;
-        v[o] = u[0] * 0.5;
-        v[o + 1] = Math.abs(u[1]) * 0.4 + (s - l) * 0.5 + 0.04 * R();
-        v[o + 2] = u[2] * 0.5;
+        v[o] = u[0] * 0.6;
+        v[o + 1] = Math.max(0.1, Math.abs(u[1]) * 0.6 + (s - l) * 1.2) + 0.08 * R();
+        v[o + 2] = u[2] * 0.6;
       }
     }
   }
@@ -463,6 +467,8 @@ export function createSnowPoints(sim, palette) {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uScale: { value: 500 },
+      uSizeBoost: { value: 1 },
+      uDpr: { value: 1 },
       uTime: { value: 0 },
       uColor: { value: new THREE.Color(palette.snow) },
       uLightDir: { value: new THREE.Vector3(-0.5, 0.6, 0.6).normalize() },
@@ -473,6 +479,8 @@ export function createSnowPoints(sim, palette) {
       attribute float aSeed;
       attribute float aSpark;
       uniform float uScale;
+      uniform float uSizeBoost;
+      uniform float uDpr;
       varying float vSeed;
       varying float vSpark;
       varying float vFade;
@@ -482,9 +490,11 @@ export function createSnowPoints(sim, palette) {
         vFloor = 1.0 - smoothstep( uFloorY + 0.012, uFloorY + 0.06, position.y );
         vec4 mv = modelViewMatrix * vec4( position, 1.0 );
         gl_Position = projectionMatrix * mv;
-        float px = aSize * uScale / -mv.z;
-        gl_PointSize = max( px, 1.6 );
-        vFade = clamp( px / 1.6, 0.35, 1.0 );
+        // su schermi piccoli i fiocchi crescono un po' per restare visibili; minimo ~2 px CSS
+        float px = aSize * uSizeBoost * uScale / -mv.z;
+        float minPx = 2.0 * uDpr;
+        gl_PointSize = max( px, minPx );
+        vFade = clamp( px / minPx, 0.6, 1.0 );
         vSeed = aSeed;
         vSpark = aSpark;
       }
@@ -503,7 +513,8 @@ export function createSnowPoints(sim, palette) {
         if ( r2 > 0.86 ) discard;
         // fiocco piatto e opaco: leggera luce dal lato della lampada, nessun bordo scuro
         float side = clamp( dot( c * vec2( 1.0, -1.0 ), normalize( uLightDir.xy + 1e-4 ) ) * 0.5 + 0.5, 0.0, 1.0 );
-        vec3 col = uColor * ( 0.93 + 0.1 * side ) * ( 0.93 + 0.07 * vSeed ) * mix( 0.9, 1.0, vFade );
+        // lato in luce più chiaro, lato in ombra appena grigio: il fiocco si stacca dal fondo chiaro
+        vec3 col = uColor * ( 0.8 + 0.3 * side ) * ( 0.94 + 0.06 * vSeed ) * mix( 0.9, 1.0, vFade );
         float glint = pow( max( 0.0, sin( uTime * ( 1.1 + vSeed * 2.6 ) + vSeed * 61.0 ) ), 36.0 ) * vSpark;
         col += glint * 0.5 * ( 1.0 - vFloor );
         col *= 1.0 - 0.1 * vFloor;   // i fiocchi depositati si fondono con il letto di neve

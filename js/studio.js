@@ -133,8 +133,12 @@ export function createBackdrop(palette, keyDirection) {
         vec2 q = vec2( vW.x * 0.62, along * 0.55 + max( 0.0, vW.z ) * 0.35 );
         float vig = smoothstep( 0.6, 7.0, length( q - vec2( -0.25, 0.9 ) ) );
         vec3 col = mix( uColor, uEdge, vig * 0.85 );
+        // parete di fondo più scura (fondale "a sfumatura" da still life):
+        // vista attraverso il vetro dà contrasto alla neve bianca
+        float wall = smoothstep( 0.25, 2.2, h );
+        col = mix( col, uEdge * 0.9, wall * 0.62 );
         // pozza di luce dietro l'oggetto, leggermente a sinistra
-        col *= 1.0 + 0.06 * ( 1.0 - smoothstep( 0.0, 3.5, length( vec2( vW.x + 0.8, along - 1.6 ) ) ) );
+        col *= 1.0 + 0.05 * ( 1.0 - smoothstep( 0.0, 3.5, length( vec2( vW.x + 0.8, along - 1.6 ) ) ) );
 
         // ombre solo sul pavimento
         float onFloor = 1.0 - smoothstep( 0.02, 0.4, h );

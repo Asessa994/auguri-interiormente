@@ -22,6 +22,8 @@ export async function captureOgImage({ renderer, scene, camera, shake, view, pal
   placeCamera(camera, fit.dist, view.az, view.el);
   const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   snow.material.uniforms.uScale.value = H / (2 * tanHalf);
+  snow.material.uniforms.uDpr.value = 1;
+  snow.material.uniforms.uSizeBoost.value = 1.15;
   updateSculptSpace();
   renderer.render(scene, camera);
 

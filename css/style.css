@@ -258,6 +258,22 @@ body.layout-side .invite { font-size: clamp(24px, 3vw, 40px); }
   .btn { height: 34px; padding: 0 14px; }
 }
 
+/* ── Crediti ─────────────────────────────────────────────── */
+.credit {
+  position: fixed;
+  left: 10px;
+  bottom: calc(6px + var(--safe-b));
+  margin: 0;
+  max-width: 60vw;
+  font-family: var(--sans);
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--text-soft) 80%, transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+body.layout-stack .credit { left: 0; right: 0; max-width: none; text-align: center; bottom: 2px; }
+
 /* ── Segnaposto ───────────────────────────────────────────── */
 body.has-placeholder.layout-stack .ui-head { padding-top: calc(52px + var(--safe-t)); }
 .placeholder-badge {

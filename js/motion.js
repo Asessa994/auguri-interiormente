@@ -144,8 +144,8 @@ export class MotionController {
     // breve assestamento iniziale del filtro di gravità
     if (this.usingGravityFilter && now - this.startedAt < 350) return;
 
-    // filtro del rumore (passa-basso ~35 ms)
-    const ks = 1 - Math.exp(-dt / 0.035);
+    // filtro del rumore (passa-basso ~25 ms: toglie il tremolio senza ritardare il gesto)
+    const ks = 1 - Math.exp(-dt / 0.025);
     const s = this.smooth;
     s[0] += (ax - s[0]) * ks; s[1] += (ay - s[1]) * ks; s[2] += (az - s[2]) * ks;
 

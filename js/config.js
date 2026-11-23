@@ -30,6 +30,10 @@ export const CONFIG = {
     marbleTint: 1.0,           // 1 = colore palette.marble
   },
 
+  // Crediti mostrati in piccolo in basso (obbligatori se usi un modello con licenza CC BY).
+  // Esempio: 'David: scansione SMK – Statens Museum for Kunst (CC0), ottimizzazione NOME AUTORE (CC BY 4.0)'
+  credit: '',
+
   plaque: {
     text: 'InteriormenteDesign',
     font: './assets/fonts/cormorant-garamond-600.typeface.json',
@@ -45,8 +49,8 @@ export const CONFIG = {
   quality: 'auto',
 
   motion: {
-    gain: 0.9,          // quanto il movimento del telefono smuove il liquido
-    deadzone: 0.7,      // m/s² ignorati (tremolio della mano)
+    gain: 1.35,         // quanto il movimento del telefono smuove il liquido
+    deadzone: 0.5,      // m/s² ignorati (tremolio della mano)
     maxAccel: 24,       // m/s² massimo considerato per un singolo campione
   },
 
