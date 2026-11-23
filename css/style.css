@@ -450,6 +450,8 @@ body:not(.is-loading) .loader { opacity: 0; visibility: hidden; }
 .error-card { max-width: 420px; text-align: center; }
 .error-title { font-size: 22px; margin: 18px 0 8px; }
 .error-msg { font-family: var(--sans); font-size: 13px; color: var(--text-soft); margin: 0 0 26px; }
+.error-detail { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--text-soft); opacity: .7; margin: -16px 0 22px; word-break: break-word; }
+.error-detail:empty { display: none; }
 .error-greeting p { margin: 0; font-size: 22px; line-height: 1.35; }
 .error-greeting p:last-child { font-style: italic; margin-top: .4em; }
 

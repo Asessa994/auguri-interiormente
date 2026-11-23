@@ -84,8 +84,12 @@ function setProgress(f) {
   intro?.setProgress(f);
 }
 
-function showError(message) {
+function showError(message, err) {
   clearTimeout(window.__loadTimeout);
+  if (err) {
+    const d = $('error-detail');
+    if (d) d.textContent = 'Dettaglio tecnico: ' + (err.message || String(err));
+  }
   const ie = $('intro');
   if (ie) ie.hidden = true;
   $('error-msg').textContent = message;
@@ -106,12 +110,14 @@ async function main() {
 
   // Musica: parte al primo gesto dell'utente (anche il tocco che salta l'introduzione).
   const musicBtn = $('btn-music');
-  const music = new Music(CONFIG.music, (m) => {
+  const silent = { enabled: false, failed: true, audio: { paused: true }, unlock() {}, toggle() {}, suspend() {}, resume() {} };
+  let music = silent;
+  try { music = new Music(CONFIG.music, (m) => {
     musicBtn.setAttribute('aria-pressed', m.enabled ? 'true' : 'false');
     musicBtn.setAttribute('aria-label', m.enabled ? 'Disattiva la musica' : 'Attiva la musica');
     musicBtn.classList.toggle('is-off', !m.enabled);
     if (m.failed) musicBtn.hidden = true;
-  });
+  }); } catch (e) { console.error('[musica] non disponibile:', e); music = silent; }
   musicBtn.setAttribute('aria-pressed', music.enabled ? 'true' : 'false');
   musicBtn.classList.toggle('is-off', !music.enabled);
   musicBtn.addEventListener('click', (e) => { e.stopPropagation(); music.toggle(); });
@@ -129,7 +135,7 @@ async function main() {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
   } catch (err) {
     console.error(err);
-    showError('Il browser non riesce ad attivare la grafica 3D (WebGL 2). Prova ad aggiornarlo o ad aprire il link con Safari o Chrome.');
+    showError('Il browser non riesce ad attivare la grafica 3D (WebGL 2). Chiudi le altre schede, poi ricarica; oppure apri il link con Safari o Chrome.', err);
     return;
   }
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -667,5 +673,5 @@ async function main() {
 
 main().catch((err) => {
   console.error(err);
-  showError('Si è verificato un errore durante il caricamento. Ricarica la pagina; se il problema continua, prova con un altro browser.');
+  showError('Si è verificato un errore durante il caricamento. Ricarica la pagina; se il problema continua, prova con un altro browser.', err);
 });

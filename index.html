@@ -28,13 +28,31 @@
   <link rel="preload" href="./assets/fonts/inter-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="modulepreload" href="./vendor/three/three.core.min.js">
   <link rel="modulepreload" href="./vendor/three/three.module.min.js">
-  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/style.css?v=6">
 
+  <!-- Versione dei file: quando aggiorni il sito cambia v=6 in v=7 in TUTTO questo file (Trova e sostituisci).
+       Così telefoni e browser non mescolano file vecchi (in memoria) e nuovi. -->
   <script type="importmap">
     {
       "imports": {
         "three": "./vendor/three/three.module.min.js",
-        "three/addons/": "./vendor/three/addons/"
+        "three/addons/": "./vendor/three/addons/",
+        "./js/capture.js": "./js/capture.js?v=6",
+        "./js/config.js": "./js/config.js?v=6",
+        "./js/david.js": "./js/david.js?v=6",
+        "./js/dimensions.js": "./js/dimensions.js?v=6",
+        "./js/framing.js": "./js/framing.js?v=6",
+        "./js/gestures.js": "./js/gestures.js?v=6",
+        "./js/globe.js": "./js/globe.js?v=6",
+        "./js/intro.js": "./js/intro.js?v=6",
+        "./js/main.js": "./js/main.js?v=6",
+        "./js/materials.js": "./js/materials.js?v=6",
+        "./js/motion.js": "./js/motion.js?v=6",
+        "./js/music.js": "./js/music.js?v=6",
+        "./js/snow.js": "./js/snow.js?v=6",
+        "./js/studio.js": "./js/studio.js?v=6",
+        "./js/tonemap.js": "./js/tonemap.js?v=6",
+        "./js/tune.js": "./js/tune.js?v=6"
       }
     }
   </script>
@@ -84,6 +102,7 @@
       <p class="brand">Interiormente<span>Design</span></p>
       <p class="error-title">La sfera non può essere mostrata su questo dispositivo.</p>
       <p class="error-msg" id="error-msg"></p>
+      <p class="error-detail" id="error-detail"></p>
       <div class="error-greeting">
         <p>Ogni spazio custodisce una storia.</p>
         <p>Grazie per averci affidato la vostra.</p>
@@ -121,8 +140,17 @@
       window.__loadTimeout = setTimeout(function () {
         fail('Il caricamento sta impiegando troppo tempo. Controlla la connessione e ricarica la pagina.');
       }, 90000);
+      // un file JavaScript non valido o di una versione diversa: lo diciamo subito, con il dettaglio tecnico
+      window.addEventListener('error', function (e) {
+        if (!e || !e.message || !document.body.classList.contains('is-loading')) return;
+        var d = document.getElementById('error-detail');
+        if (d) d.textContent = 'Dettaglio tecnico: ' + e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ')' : '');
+        if (/import|export|module|SyntaxError/i.test(e.message)) {
+          fail('Alcuni file non sono stati caricati correttamente. Ricarica la pagina tra qualche istante.');
+        }
+      });
     })();
   </script>
-  <script type="module" src="./js/main.js"></script>
+  <script type="module" src="./js/main.js?v=6"></script>
 </body>
 </html>

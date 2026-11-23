@@ -14,6 +14,8 @@ import { DIM, innerRadiusAt } from './dimensions.js';
 // ─────────────────────────────────────────────────────────────
 
 const MAX_VORTICES = 7;
+let JITTER = 0.4;
+export function setJitter(v) { JITTER = v; }
 const FLOOR_RMAX = innerRadiusAt(DIM.FLOOR_Y) + 0.02;
 
 function rand(seed) {
@@ -49,6 +51,7 @@ export class SnowSimulation {
     this.freq = new Float32Array(N);
     this.seed = new Float32Array(N);
     this.spark = new Float32Array(N);
+    this.kick = new Float32Array(N);       // quanto ogni fiocco risente subito del colpo (fiocchi diversi, risposte diverse)
     this.rest = new Uint8Array(N);
 
     // liquido
@@ -105,6 +108,7 @@ export class SnowSimulation {
       this.freq[i] = 0.6 + R() * 1.6;
       this.seed[i] = R();
       this.spark[i] = R() > 0.82 ? 0.5 + R() * 0.5 : 0;
+      this.kick[i] = (0.15 + 0.55 * R()) * (1.1 - 0.5 * k);
 
       const o = i * 3;
       if (i % 6 !== 0) {
@@ -140,14 +144,14 @@ export class SnowSimulation {
     if (mag > 2.2) { const k = 2.2 / mag; dx *= k; dy *= k; dz *= k; mag = 2.2; }
     const rm = this.reducedMotion ? 0.7 : 1;
     // il liquido resta indietro rispetto al vetro…
-    this.U.x -= dx * 0.85 * rm; this.U.y -= dy * 0.85 * rm; this.U.z -= dz * 0.85 * rm;
-    // …e così i fiocchi già sospesi: reagiscono nello stesso istante, senza ritardo
-    const kx = dx * 0.7 * rm, ky = dy * 0.7 * rm, kz = dz * 0.7 * rm;
-    const v = this.vel;
+    this.U.x -= dx * 0.5 * rm; this.U.y -= dy * 0.5 * rm; this.U.z -= dz * 0.5 * rm;
+    // …e così i fiocchi già sospesi: reagiscono subito, ma ognuno a modo suo
+    // (una spinta identica per tutti li farebbe muovere come un unico blocco)
+    const v = this.vel, kk = this.kick;
     for (let i = 0; i < this.active; i++) {
       if (this.rest[i]) continue;
-      const o = i * 3;
-      v[o] -= kx; v[o + 1] -= ky; v[o + 2] -= kz;
+      const o = i * 3, f = kk[i] * rm;
+      v[o] -= dx * f; v[o + 1] -= dy * f; v[o + 2] -= dz * f;
     }
     const ul = this.U.length();
     if (ul > 2.4) this.U.multiplyScalar(2.4 / ul);
@@ -197,7 +201,10 @@ export class SnowSimulation {
   // ── campo di velocità del liquido ─────────────────────────
   _fluid(x, y, z, t) {
     const U = this.U;
-    let ux = U.x, uy = U.y, uz = U.z;
+    // corrente con ricircolo: al centro va nel verso della scossa, lungo il vetro torna indietro
+    // (una corrente uniforme spingerebbe tutta la neve contro lo stesso punto del vetro)
+    const prof = 1 - 2.2 * (x * x + y * y + z * z) / (DIM.INNER_R * DIM.INNER_R);
+    let ux = U.x * prof, uy = U.y * prof, uz = U.z * prof;
     for (let k = 0; k < this.vortices.length; k++) {
       const v = this.vortices[k];
       const rx = x - v.c.x, ry = y - v.c.y, rz = z - v.c.z;
@@ -216,7 +223,7 @@ export class SnowSimulation {
     if (fh < 0.55 && this._stir > 0.01) uy += this._stir * Math.exp(-fh / 0.2);
     // turbolenza a divergenza nulla (flusso ABC), due ottave
     const amp = this.E * 0.34 + 0.0045;
-    const ph = t * 0.45;
+    const ph = t * 0.8;
     const k1 = 3.3;
     ux += amp * 0.5 * (Math.sin(k1 * z + ph) + Math.cos(k1 * y - 0.7 * ph));
     uy += amp * 0.5 * (Math.sin(k1 * x + 1.3 * ph) + Math.cos(k1 * z + 0.5 * ph));
@@ -233,7 +240,8 @@ export class SnowSimulation {
       const nx = x / r, ny = y / r, nz = z / r;
       const un = ux * nx + uy * ny + uz * nz;
       if (un > 0) {
-        const w = Math.min(1, (r - 0.68) / 0.26);
+        // vicino al vetro la corrente "rimbalza" verso l'interno: niente punti in cui la neve si ammassa
+        const w = Math.min(1, (r - 0.68) / 0.26) * 1.55;
         ux -= nx * un * w; uy -= ny * un * w; uz -= nz * un * w;
       }
     }
@@ -345,7 +353,11 @@ export class SnowSimulation {
       const nx = x / r, ny = y / r, nz = z / r;
       x = nx * lim; y = ny * lim; z = nz * lim;
       const vn = v[o] * nx + v[o + 1] * ny + v[o + 2] * nz;
-      if (vn > 0) { v[o] -= nx * vn; v[o + 1] -= ny * vn; v[o + 2] -= nz * vn; }
+      if (vn > 0) {
+        // sulle pareti un piccolo rimbalzo: i fiocchi non restano incollati al vetro
+        const e = ny < -0.5 ? 1 : 1.3;
+        v[o] -= nx * vn * e; v[o + 1] -= ny * vn * e; v[o + 2] -= nz * vn * e;
+      }
       if (ny < -0.55) up = 1;
     }
 
@@ -391,6 +403,10 @@ export class SnowSimulation {
     const p = this.pos, v = this.vel;
     let moving = 0, speedSum = 0;
     const flutter = 0.011;
+    // diffusione turbolenta: piccole spinte casuali proporzionali all'agitazione,
+    // disperdono i fiocchi invece di lasciarli compattarsi
+    const jit = this.E > 0.02 ? Math.sqrt(this.E) * JITTER * Math.sqrt(h * 60) : 0;
+    const R = this.random;
     for (let i = 0; i < this.active; i++) {
       if (this.rest[i]) continue;
       const o = i * 3;
@@ -403,6 +419,7 @@ export class SnowSimulation {
       let vx = v[o] + (tx - v[o]) * a;
       let vy = v[o + 1] + (ty - v[o + 1]) * a;
       let vz = v[o + 2] + (tz - v[o + 2]) * a;
+      if (jit) { vx += (R() - 0.5) * jit; vy += (R() - 0.5) * jit; vz += (R() - 0.5) * jit; }
       const sp2 = vx * vx + vy * vy + vz * vz;
       if (sp2 > 9) { const k = 3 / Math.sqrt(sp2); vx *= k; vy *= k; vz *= k; }
       v[o] = vx; v[o + 1] = vy; v[o + 2] = vz;

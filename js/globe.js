@@ -148,8 +148,13 @@ export async function buildGlobe(materials, palette, plaqueCfg, { basePlaqueLine
   // Targhetta in oro sulla base.
   let basePlaque = null;
   if (basePlaqueLines && basePlaqueLines.length) {
-    basePlaque = await buildBasePlaque(palette, basePlaqueLines, maxAnisotropy);
-    group.add(basePlaque.group);
+    try {
+      basePlaque = await buildBasePlaque(palette, basePlaqueLines, maxAnisotropy);
+      group.add(basePlaque.group);
+    } catch (e) {
+      console.error('[targhetta base] non creata:', e); // la scena prosegue comunque
+      basePlaque = null;
+    }
   }
 
   // Interno.

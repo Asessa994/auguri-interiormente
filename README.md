@@ -57,6 +57,8 @@ Poi apri `http://localhost:8080`. I sensori del telefono richiedono HTTPS: per p
 3. *Settings → Pages → Build and deployment*: *Deploy from a branch*, ramo `main`, cartella `/ (root)`.
 4. Dopo un minuto il sito è su **https://asessa994.github.io/auguri-interiormente/**.
 
+**Aggiornamenti:** GitHub Pages fa tenere ai telefoni una copia dei file per circa 10 minuti. Per non mescolare file vecchi e nuovi, ogni volta che modifichi qualcosa in `js/` o `css/` apri `index.html` e sostituisci ovunque `v=6` con `v=7` (poi `v=8`, e così via).
+
 Se usi un altro nome di repository o un dominio tuo, sostituisci l'indirizzo nelle righe `og:url` e `og:image` di `index.html`.
 
 Alternativa senza account GitHub: [Netlify Drop](https://app.netlify.com/drop) — trascini la cartella e ottieni subito un link HTTPS.
